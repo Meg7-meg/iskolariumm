@@ -32,6 +32,49 @@ class _IskolariumShellState extends State<IskolariumShell> {
     setState(() => showNotifications = false);
   }
 
+  // Opens Study Sessions as a separate page.
+  // It does not add another bottom navigation destination.
+
+void openStudySessions() {
+  Navigator.push(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => StudySessionsPage(
+        onNavigateToTab: (index) {
+          Navigator.of(context).pop();
+
+          setState(() {
+            selectedIndex = index;
+          });
+        },
+      ),
+    ),
+  );
+}
+
+
+  // Opens the student's attendance details as a separate page.
+  // It does not add another bottom navigation destination.
+  void openAttendance() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => const StudentAttendanceScreen(),
+      ),
+    );
+  }
+
+  // Opens the student's scores as a separate page.
+  // It does not add another bottom navigation destination.
+  void openScores() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => const StudentScoresDisplay(),
+      ),
+    );
+  }
+
   void openAddDialog() {
     showDialog<void>(
       context: context,
@@ -57,10 +100,10 @@ class _IskolariumShellState extends State<IskolariumShell> {
         return SafeArea(
           top: false,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
             decoration: const BoxDecoration(
-              color: Color(0xFFF7F8FA),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -68,29 +111,29 @@ class _IskolariumShellState extends State<IskolariumShell> {
               children: [
                 Center(
                   child: Container(
-                    width: 42,
-                    height: 5,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD5DAE0),
+                      color: const Color(0xFFE2ECFD),
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 const Text(
                   'Add to Iskolarium',
                   style: TextStyle(
-                    fontSize: 23,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF303941),
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: ink,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 const Text(
                   'What would you like to add?',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF7B8792)),
+                  style: TextStyle(fontSize: 13, color: muted),
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 20),
                 _buildAddOption(
                   icon: Icons.menu_book_rounded,
                   title: 'Add Class',
@@ -98,20 +141,23 @@ class _IskolariumShellState extends State<IskolariumShell> {
                   onTap: () {
                     Navigator.pop(sheetContext);
                     setState(() => selectedIndex = 1);
-                    showClassDialog(context, refresh);
+                    openAddDialog();
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildAddOption(
                   icon: Icons.assignment_rounded,
                   title: 'Add Task',
                   subtitle: 'Add an assignment or activity',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    showTaskDialog(context, refresh);
+                    showTaskDialog(
+                    context,
+                    onSaved: refresh,
+                    );
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildAddOption(
                   icon: Icons.calendar_month_rounded,
                   title: 'Add Event',
@@ -137,23 +183,27 @@ class _IskolariumShellState extends State<IskolariumShell> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: Theme.of(context).colorScheme.onSurface,
-      borderRadius: BorderRadius.circular(18),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            border: Border.all(color: borderColor),
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE9EDF1),
-                  borderRadius: BorderRadius.circular(14),
+                  color: iceBlue,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: const Color(0xFF303941), size: 25),
+                child: Icon(icon, color: primaryBlue, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -163,23 +213,23 @@ class _IskolariumShellState extends State<IskolariumShell> {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF303941),
+                        color: ink,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF7B8792),
+                        fontSize: 11,
+                        color: muted,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA5AF)),
+              const Icon(Icons.chevron_right_rounded, color: muted, size: 20),
             ],
           ),
         ),
@@ -194,6 +244,9 @@ class _IskolariumShellState extends State<IskolariumShell> {
         onOpenClasses: () => setState(() => selectedIndex = 1),
         onOpenTasks: () => setState(() => selectedIndex = 3),
         onOpenNotifications: openNotifications,
+        onOpenStudySessions: openStudySessions,
+        onOpenAttendance: openAttendance,
+        onOpenScores: openScores,
         onRefresh: refresh,
       ),
       ClassesPage(onRefresh: refresh),
@@ -203,10 +256,7 @@ class _IskolariumShellState extends State<IskolariumShell> {
         onAdd: openAddDialog,
       ),
       TasksPage(onRefresh: refresh),
-      ProfilePage(
-        isDarkMode: widget.isDarkMode,
-        onToggleTheme: widget.onToggleTheme,
-      ),
+      const ProfilePage(),
     ];
 
     return Scaffold(
@@ -227,7 +277,6 @@ class _IskolariumShellState extends State<IskolariumShell> {
               elevation: 3,
               child: const Icon(Icons.add, size: 32),
             ),
-
       bottomNavigationBar: GlassNavigationIsland(
         selectedIndex: selectedIndex,
         onItemSelected: (index) {
@@ -261,7 +310,7 @@ class AppBottomNavigation extends StatelessWidget {
     ];
 
     return Container(
-      decoration:BoxDecoration(
+      decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.onSurface,
         border: Border(top: BorderSide(color: borderColor)),
       ),

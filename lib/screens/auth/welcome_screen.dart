@@ -7,13 +7,13 @@ import 'login_screen.dart';
 // ============================================================
 
 class _WelcomeColors {
-  static const navy = Color(0xFF08234A);
-  static const deepNavy = Color(0xFF06172F);
-  static const blue = Color(0xFF123D70);
-  static const buttonBlue = Color(0xFF123D70);
+  static const navy = Color(0xFF0D1F3C);
+  static const deepNavy = Color(0xFF081A33);
+  static const blue = Color(0xFF1A56DB);
+  static const buttonBlue = Color(0xFF1A56DB);
   static const gold = Color(0xFFFFC95C);
   static const subtitle = Color(0xFFD5E4F8);
-  static const heading = Color(0xFF102B50);
+  static const heading = Color(0xFF0D1F3C);
   static const body = Color(0xFF71839D);
   static const footer = Color(0xFF8799B2);
   static const white = Colors.white;
@@ -124,7 +124,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Color(0xFF123968),
+                          Color(0xFF1747B8),
                           _WelcomeColors.navy,
                           _WelcomeColors.deepNavy,
                         ],
@@ -143,7 +143,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   left: -90,
                   child: _GlowCircle(
                     size: screenWidth * 0.72,
-                    color: const Color(0xFF1C5CA0)
+                    color: const Color(0xFF2468D8)
                         .withOpacity(0.20),
                   ),
                 ),
@@ -435,9 +435,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
                 ),
 
-                // ==========================================
+               
                 // 6. BIG STATIC OWL MASCOT
-                // ==========================================
+               
 
                 Positioned(
                   top: owlTop,

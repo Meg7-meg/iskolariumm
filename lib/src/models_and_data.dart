@@ -1,7 +1,9 @@
+
 part of '../main.dart';
 
-// 2. SAMPLE DATA MODELS
-// ------------------------------------------------------------
+// ============================================================
+// SAMPLE DATA MODELS
+// ============================================================
 
 class ClassItem {
   final String code;
@@ -11,6 +13,7 @@ class ClassItem {
   final String day;
   final String time;
   final double progress;
+  final String section;
 
   const ClassItem({
     required this.code,
@@ -20,6 +23,7 @@ class ClassItem {
     required this.day,
     required this.time,
     required this.progress,
+    this.section = 'Section A',
   });
 }
 
@@ -57,6 +61,10 @@ class NoticeItem {
   });
 }
 
+// ============================================================
+// SAMPLE CLASSES
+// ============================================================
+
 const List<ClassItem> sampleClasses = [
   ClassItem(
     code: 'CS 304',
@@ -66,6 +74,7 @@ const List<ClassItem> sampleClasses = [
     day: 'Monday',
     time: '9:00 AM',
     progress: 0.62,
+    section: 'Section A',
   ),
   ClassItem(
     code: 'CS 218',
@@ -75,6 +84,7 @@ const List<ClassItem> sampleClasses = [
     day: 'Monday',
     time: '1:30 PM',
     progress: 0.50,
+    section: 'Section A',
   ),
   ClassItem(
     code: 'MATH 210',
@@ -84,6 +94,7 @@ const List<ClassItem> sampleClasses = [
     day: 'Tuesday',
     time: '10:00 AM',
     progress: 0.70,
+    section: 'Section A',
   ),
   ClassItem(
     code: 'CS 201',
@@ -93,8 +104,13 @@ const List<ClassItem> sampleClasses = [
     day: 'Wednesday',
     time: '11:30 AM',
     progress: 0.58,
+    section: 'Section A',
   ),
 ];
+
+// ============================================================
+// TASK STORE
+// ============================================================
 
 class TaskStore {
   static final List<TaskItem> items = [
@@ -131,6 +147,10 @@ class TaskStore {
     ),
   ];
 }
+
+// ============================================================
+// NOTIFICATION STORE
+// ============================================================
 
 class NoticeStore {
   static final List<NoticeItem> items = [
@@ -175,4 +195,6 @@ class NoticeStore {
   ];
 }
 
-// ------------------------------------------------------------
+// ============================================================
+// END OF MODELS AND SAMPLE DATA
+// ============================================================

@@ -1,6 +1,12 @@
+
 part of '../main.dart';
 
-// 11. GENERAL ADD-ITEM DIALOG
+// ============================================================
+// ISKOLARIUM — DIALOGS AND NAVIGATION COMPONENTS
+// ============================================================
+
+// ------------------------------------------------------------
+// ADD ITEM DIALOG
 // ------------------------------------------------------------
 
 class AddItemDialog extends StatefulWidget {
@@ -18,10 +24,27 @@ class AddItemDialog extends StatefulWidget {
 }
 
 class _AddItemDialogState extends State<AddItemDialog> {
+  final _formKey = GlobalKey<FormState>();
   final titleController = TextEditingController();
   final subjectController = TextEditingController();
 
   String itemType = 'Assignment';
+
+  bool get isTask => widget.currentTab == 3;
+  bool get isClass => widget.currentTab == 1;
+  bool get isEvent => widget.currentTab == 2;
+
+  String get dialogTitle {
+    if (isClass) return 'Add class';
+    if (isEvent) return 'Add calendar event';
+    return 'Add task';
+  }
+
+  String get titleLabel {
+    if (isClass) return 'Class name';
+    if (isEvent) return 'Event title';
+    return 'Task title';
+  }
 
   @override
   void dispose() {
@@ -30,97 +53,255 @@ class _AddItemDialogState extends State<AddItemDialog> {
     super.dispose();
   }
 
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final title = titleController.text.trim();
+    final subject = subjectController.text.trim();
+
+    // Existing frontend task behavior is preserved.
+    if (isTask) {
+      TaskStore.items.insert(
+        0,
+        TaskItem(
+          title: title,
+          subject: subject.isEmpty ? itemType : subject,
+          due: 'Due date not set',
+          priority: 'Medium',
+        ),
+      );
+    }
+
+    Navigator.pop(context);
+    widget.onAdded();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return AlertDialog(
-      title: Text(
-        widget.currentTab == 1
-            ? 'Add class'
-            : widget.currentTab == 2
-            ? 'Add calendar event'
-            : 'Add task',
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
+      contentPadding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(22, 8, 22, 20),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: BorderSide(
+          color: isDark
+              ? const Color(0xFF414852)
+              : AppColors.border,
+        ),
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.currentTab == 3)
-              DropdownButtonFormField<String>(
-                initialValue: itemType,
-                decoration: const InputDecoration(labelText: 'Type'),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'Assignment',
-                    child: Text('Assignment'),
+      title: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(
+              isClass
+                  ? Icons.menu_book_rounded
+                  : isEvent
+                      ? Icons.calendar_month_rounded
+                      : Icons.add_task_rounded,
+              color: AppColors.primary,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              dialogTitle,
+              style: const TextStyle(
+                color: AppColors.navy,
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 360,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isTask) ...[
+                  const Text(
+                    'TASK TYPE',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
                   ),
-                  DropdownMenuItem(value: 'Quiz', child: Text('Quiz')),
-                  DropdownMenuItem(
-                    value: 'Examination',
-                    child: Text('Examination'),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: itemType,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(
+                        Icons.category_outlined,
+                        color: AppColors.study,
+                      ),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Assignment',
+                        child: Text('Assignment'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Quiz',
+                        child: Text('Quiz'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Examination',
+                        child: Text('Examination'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Activity',
+                        child: Text('Activity'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => itemType = value);
+                      }
+                    },
                   ),
-                  DropdownMenuItem(value: 'Activity', child: Text('Activity')),
+                  const SizedBox(height: 17),
                 ],
-                onChanged: (value) {
-                  if (value != null) setState(() => itemType = value);
-                },
-              ),
-            TextField(
-              controller: titleController,
-              decoration: InputDecoration(
-                labelText: widget.currentTab == 1
-                    ? 'Class name'
-                    : widget.currentTab == 2
-                    ? 'Event title'
-                    : 'Task title',
-              ),
+                const Text(
+                  'TITLE',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: titleController,
+                  textCapitalization: TextCapitalization.sentences,
+                  maxLength: 80,
+                  decoration: InputDecoration(
+                    hintText: titleLabel,
+                    counterText: '',
+                    prefixIcon: const Icon(
+                      Icons.edit_note_rounded,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter a title.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 17),
+                const Text(
+                  'SUBJECT OR DETAILS',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: subjectController,
+                  textCapitalization: TextCapitalization.sentences,
+                  maxLines: 2,
+                  maxLength: 120,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter subject or additional details',
+                    counterText: '',
+                    prefixIcon: Padding(
+                      padding: EdgeInsets.only(bottom: 28),
+                      child: Icon(
+                        Icons.subject_rounded,
+                        color: AppColors.info,
+                      ),
+                    ),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: AppColors.infoLight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.infoBorder),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        color: AppColors.infoDark,
+                        size: 17,
+                      ),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'This is a frontend prototype. Data is temporary and is not saved to a database.',
+                          style: TextStyle(
+                            color: AppColors.infoDark,
+                            fontSize: 11,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            TextField(
-              controller: subjectController,
-              decoration: const InputDecoration(
-                labelText: 'Subject or details',
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'This is a local UI prototype. Classes and calendar events are not saved yet.',
-              style: TextStyle(color: muted, fontSize: 12),
-            ),
-          ],
+          ),
         ),
       ),
       actions: [
-        TextButton(
+        OutlinedButton(
           onPressed: () => Navigator.pop(context),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.textSecondary,
+            side: const BorderSide(color: AppColors.border),
+          ),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: () {
-            final title = titleController.text.trim();
-            final subject = subjectController.text.trim();
-
-            if (title.isEmpty) return;
-
-            if (widget.currentTab == 3) {
-              TaskStore.items.insert(
-                0,
-                TaskItem(
-                  title: title,
-                  subject: subject.isEmpty ? itemType : subject,
-                  due: 'Due date not set',
-                  priority: 'Medium',
-                ),
-              );
-            }
-
-            Navigator.pop(context);
-            widget.onAdded();
-          },
-          child: const Text('Add'),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.add_rounded, size: 17),
+          label: const Text('Add'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
         ),
       ],
     );
   }
 }
+
+// ------------------------------------------------------------
+// GLASS NAVIGATION ISLAND — LUCIDE ICONS
+// ------------------------------------------------------------
 
 class GlassNavigationIsland extends StatelessWidget {
   final int selectedIndex;
@@ -132,15 +313,15 @@ class GlassNavigationIsland extends StatelessWidget {
     required this.onItemSelected,
   });
 
-  static const Color activeBlue = Color(0xFF1E60D5);
-  static const Color inactiveMuted = Color(0xFF94A3B8);
+  static const Color activeBlue = AppColors.primary;
+  static const Color inactiveMuted = AppColors.textMuted;
 
   static const List<IconData> icons = [
-    Icons.home_rounded,
-    Icons.menu_book_rounded,
-    Icons.calendar_month_rounded,
-    Icons.assignment_rounded,
-    Icons.person_rounded,
+    LucideIcons.house,
+    LucideIcons.bookOpen,
+    LucideIcons.calendarDays,
+    LucideIcons.clipboardList,
+    LucideIcons.userRound,
   ];
 
   static const List<String> labels = [
@@ -153,6 +334,15 @@ class GlassNavigationIsland extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final safeIndex = selectedIndex.clamp(0, labels.length - 1);
+
+    final islandColor = theme.colorScheme.surface;
+    final border = isDark
+        ? const Color(0xFF414852)
+        : AppColors.border;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: ClipRRect(
@@ -160,19 +350,31 @@ class GlassNavigationIsland extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: 8,
+            ),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
+              color: islandColor.withValues(alpha: isDark ? 0.94 : 0.90),
               borderRadius: BorderRadius.circular(35),
               border: Border.all(
-                color: const Color(0xFFD8E5F8),
-                width: 1.2,
+                color: border,
+                width: 1.1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF1E60D5).withValues(alpha: 0.08),
-                  blurRadius: 24,
+                  color: AppColors.primary.withValues(
+                    alpha: isDark ? 0.13 : 0.09,
+                  ),
+                  blurRadius: 25,
                   offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: isDark ? 0.12 : 0.025,
+                  ),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
@@ -182,11 +384,11 @@ class GlassNavigationIsland extends StatelessWidget {
 
                 return Stack(
                   children: [
-                    // Sliding liquid-style selection background
+                    // SLIDING ACTIVE BACKGROUND
                     AnimatedPositioned(
-                      duration: const Duration(milliseconds: 550),
-                      curve: Curves.easeInOutBack,
-                      left: selectedIndex * itemWidth,
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeOutCubic,
+                      left: safeIndex * itemWidth,
                       top: 0,
                       bottom: 0,
                       width: itemWidth,
@@ -194,64 +396,106 @@ class GlassNavigationIsland extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 2),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: activeBlue.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(30),
+                            color: AppColors.primary.withValues(
+                              alpha: isDark ? 0.22 : 0.10,
+                            ),
+                            borderRadius: BorderRadius.circular(27),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(
+                                alpha: isDark ? 0.20 : 0.10,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
 
-                    // Navigation icons and labels
+                    // NAVIGATION ITEMS
                     Row(
                       children: List.generate(labels.length, (index) {
-                        final isSelected = selectedIndex == index;
+                        final isSelected = safeIndex == index;
 
                         return Expanded(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(25),
-                            onTap: () => onItemSelected(index),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 7,
-                                horizontal: 2,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  AnimatedScale(
-                                    scale: isSelected ? 1.12 : 1.0,
-                                    duration: const Duration(milliseconds: 300),
-                                    curve: Curves.easeOutBack,
-                                    child: Icon(
-                                      icons[index],
-                                      size: 22,
-                                      color: isSelected ? activeBlue : inactiveMuted,
+                          child: Semantics(
+                            button: true,
+                            selected: isSelected,
+                            label: labels[index],
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(25),
+                              onTap: () => onItemSelected(index),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 7,
+                                  horizontal: 2,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    AnimatedScale(
+                                      scale: isSelected ? 1.12 : 1.0,
+                                      duration: const Duration(
+                                        milliseconds: 250,
+                                      ),
+                                      curve: Curves.easeOutBack,
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 220,
+                                        ),
+                                        width: 35,
+                                        height: 30,
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? AppColors.primary.withValues(
+                                                  alpha: 0.10,
+                                                )
+                                              : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(11),
+                                        ),
+                                        child: Icon(
+                                          icons[index],
+                                          size: 21,
+                                          color: isSelected
+                                              ? activeBlue
+                                              : inactiveMuted,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  AnimatedDefaultTextStyle(
-                                    duration: const Duration(milliseconds: 250),
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: isSelected
-                                          ? FontWeight.w700
-                                          : FontWeight.w400,
-                                      color: isSelected ? activeBlue : inactiveMuted,
+                                    const SizedBox(height: 3),
+                                    AnimatedDefaultTextStyle(
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w800
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? activeBlue
+                                            : inactiveMuted,
+                                      ),
+                                      child: Text(
+                                        labels[index],
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                    child: Text(labels[index]),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  AnimatedContainer(
-                                    duration: const Duration(milliseconds: 350),
-                                    curve: Curves.easeOutCubic,
-                                    height: 2,
-                                    width: isSelected ? 17 : 0,
-                                    decoration: BoxDecoration(
-                                      color: darkBg,
-                                      borderRadius: BorderRadius.circular(5),
+                                    const SizedBox(height: 4),
+                                    AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 250,
+                                      ),
+                                      curve: Curves.easeOutCubic,
+                                      height: 3,
+                                      width: isSelected ? 16 : 0,
+                                      decoration: BoxDecoration(
+                                        color: activeBlue,
+                                        borderRadius: BorderRadius.circular(5),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -268,6 +512,10 @@ class GlassNavigationIsland extends StatelessWidget {
     );
   }
 }
+
+// ------------------------------------------------------------
+// ANIMATED OWL MASCOT
+// ------------------------------------------------------------
 
 class AnimatedOwlMascot extends StatefulWidget {
   const AnimatedOwlMascot({super.key});
@@ -293,7 +541,12 @@ class _AnimatedOwlMascotState extends State<AnimatedOwlMascot>
     _floatAnimation = Tween<double>(
       begin: 0,
       end: -8,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
   }
 
   @override
@@ -310,7 +563,6 @@ class _AnimatedOwlMascotState extends State<AnimatedOwlMascot>
         'assets/images/owl.png',
         width: 100,
         height: 100,
-
         fit: BoxFit.contain,
       ),
     );
@@ -322,5 +574,3 @@ class _AnimatedOwlMascotState extends State<AnimatedOwlMascot>
     super.dispose();
   }
 }
-
-// ------------------------------------------------------------
