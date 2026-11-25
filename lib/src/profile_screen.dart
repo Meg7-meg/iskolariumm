@@ -4,9 +4,14 @@ part of '../main.dart';
 // ISKOLARIUM - PROFILE SCREEN
 // ------------------------------------------------------------
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
   static const Color _blue = AppColors.primary;
   static const Color _navy = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
@@ -14,12 +19,36 @@ class ProfilePage extends StatelessWidget {
   static const Color _border = AppColors.border;
   static const Color _ice = AppColors.primaryLight;
 
-  // ------------------------------------------------------------
-  // OPTION MESSAGE
-  // ------------------------------------------------------------
+  UserProfile? _profile;
+  bool _loading = true;
 
-  void _showOptionMessage(BuildContext context, String title) {
-    showDialog(
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await AuthService.getCurrentProfile();
+      if (mounted) {
+        setState(() {
+          _profile = profile;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _editPersonalInfo() async {
+    final controller = TextEditingController(text: _profile?.fullName ?? '');
+    final formKey = GlobalKey<FormState>();
+
+    final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -27,31 +56,262 @@ class ProfilePage extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: Text(
-            title,
-            style: const TextStyle(
+          title: const Text(
+            'Personal information',
+            style: TextStyle(
+              color: _navy,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextFormField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().length < 2) {
+                      return 'Please enter your full name.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Email: ${_profile?.email ?? AuthService.currentUser?.email ?? ''}',
+                  style: const TextStyle(color: _muted, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Role: ${(_profile?.role ?? 'student').toUpperCase()}',
+                  style: const TextStyle(color: _muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel', style: TextStyle(color: _muted)),
+            ),
+            TextButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              child: const Text(
+                'Save',
+                style: TextStyle(color: _blue, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (saved == true) {
+      try {
+        final updated = await AuthService.updateProfile(
+          fullName: controller.text,
+        );
+        if (!mounted) return;
+        setState(() => _profile = updated);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated.')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatSupabaseError(e))),
+        );
+      }
+    }
+    controller.dispose();
+  }
+
+  Future<void> _editNotificationPreferences() async {
+    final prefs = Map<String, dynamic>.from(
+      _profile?.notificationPreferences ??
+          {'tasks': true, 'events': true, 'classes': true},
+    );
+    bool tasks = prefs['tasks'] != false;
+    bool events = prefs['events'] != false;
+    bool classes = prefs['classes'] != false;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Notification preferences',
+                style: TextStyle(
+                  color: _navy,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    title: const Text('Class updates'),
+                    value: classes,
+                    onChanged: (v) => setDialogState(() => classes = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Task deadlines'),
+                    value: tasks,
+                    onChanged: (v) => setDialogState(() => tasks = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Calendar events'),
+                    value: events,
+                    onChanged: (v) => setDialogState(() => events = v),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel', style: TextStyle(color: _muted)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text(
+                    'Save',
+                    style: TextStyle(color: _blue, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true && _profile != null) {
+      try {
+        final updated = await AuthService.updateProfile(
+          fullName: _profile!.fullName,
+          notificationPreferences: {
+            'tasks': tasks,
+            'events': events,
+            'classes': classes,
+          },
+        );
+        if (!mounted) return;
+        setState(() => _profile = updated);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notification preferences saved.')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatSupabaseError(e))),
+        );
+      }
+    }
+  }
+
+  Future<void> _showSecurityDialog() async {
+    final email = _profile?.email.isNotEmpty == true
+        ? _profile!.email
+        : (AuthService.currentUser?.email ?? '');
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Privacy and security',
+            style: TextStyle(
+              color: _navy,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: Text(
+            'Signed in as $email.\nYou can request a password reset email anytime.',
+            style: const TextStyle(color: _muted, fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close', style: TextStyle(color: _muted)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                if (email.isEmpty) return;
+                try {
+                  await AuthService.sendPasswordReset(email);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Password reset sent to $email.')),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(formatSupabaseError(e))),
+                  );
+                }
+              },
+              child: const Text(
+                'Send Password Reset',
+                style: TextStyle(color: _blue, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showHelpDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Help and support',
+            style: TextStyle(
               color: _navy,
               fontSize: 17,
               fontWeight: FontWeight.w800,
             ),
           ),
           content: const Text(
-            'This feature is not connected yet.',
-            style: TextStyle(
-              color: _muted,
-              fontSize: 13,
-              height: 1.5,
-            ),
+            'Use your class enrollment code on the Classes tab to join an official class. Contact your instructor for class codes or attendance questions.',
+            style: TextStyle(color: _muted, fontSize: 13, height: 1.5),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text(
                 'Got it',
-                style: TextStyle(
-                  color: _blue,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(color: _blue, fontWeight: FontWeight.w700),
               ),
             ),
           ],
@@ -112,11 +372,11 @@ class ProfilePage extends StatelessWidget {
       },
     );
 
-    if (shouldLogout == true && context.mounted) {
-      // This returns to the first screen.
-      // Connect this action to Supabase signOut when authentication
-      // is integrated into this screen.
-      Navigator.popUntil(context, (route) => route.isFirst);
+    if (shouldLogout == true) {
+      await AuthService.signOut();
+      if (context.mounted) {
+        IskolariumApp.navigateToWelcome(context);
+      }
     }
   }
 
@@ -236,40 +496,28 @@ class ProfilePage extends StatelessWidget {
                         icon: Icons.badge_outlined,
                         title: 'Personal information',
                         subtitle: 'View and update your account details',
-                        onTap: () => _showOptionMessage(
-                          context,
-                          'Personal information',
-                        ),
+                        onTap: _editPersonalInfo,
                       ),
 
                       ProfileOption(
                         icon: Icons.notifications_active_outlined,
                         title: 'Notification preferences',
                         subtitle: 'Manage your notification settings',
-                        onTap: () => _showOptionMessage(
-                          context,
-                          'Notification preferences',
-                        ),
+                        onTap: _editNotificationPreferences,
                       ),
 
                       ProfileOption(
                         icon: Icons.shield_outlined,
                         title: 'Privacy and security',
                         subtitle: 'Manage your account security',
-                        onTap: () => _showOptionMessage(
-                          context,
-                          'Privacy and security',
-                        ),
+                        onTap: _showSecurityDialog,
                       ),
 
                       ProfileOption(
                         icon: Icons.support_agent_rounded,
                         title: 'Help and support',
                         subtitle: 'Get assistance with Iskolarium',
-                        onTap: () => _showOptionMessage(
-                          context,
-                          'Help and support',
-                        ),
+                        onTap: _showHelpDialog,
                       ),
 
                       const SizedBox(height: 12),
@@ -344,32 +592,38 @@ class ProfilePage extends StatelessWidget {
 
           const SizedBox(width: 13),
 
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Student Account',
+                  _loading
+                      ? 'Loading...'
+                      : (_profile?.fullName.isNotEmpty == true
+                          ? _profile!.fullName
+                          : 'Student Account'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: _navy,
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 Text(
-                  'Account details',
+                  _profile?.email.isNotEmpty == true
+                      ? _profile!.email
+                      : (AuthService.currentUser?.email ?? 'Account details'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: _muted,
                     fontSize: 11,
                   ),
                 ),
-                SizedBox(height: 9),
-                _StudentRoleBadge(),
+                const SizedBox(height: 9),
+                const _StudentRoleBadge(),
               ],
             ),
           ),
@@ -378,10 +632,7 @@ class ProfilePage extends StatelessWidget {
 
           IconButton(
             tooltip: 'Edit profile',
-            onPressed: () => _showOptionMessage(
-              context,
-              'Edit profile',
-            ),
+            onPressed: _editPersonalInfo,
             icon: const Icon(
               Icons.edit_rounded,
               color: _blue,

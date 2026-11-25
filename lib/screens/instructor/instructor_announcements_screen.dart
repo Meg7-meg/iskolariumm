@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../services/academic_service.dart';
+import '../../services/supabase_client_provider.dart';
 import '../../src/app_colors.dart';
 import '../../src/announcement_store.dart';
 
@@ -30,6 +32,45 @@ class _InstructorAnnouncementsPageState
   static const Color _background = AppColors.background;
 
   String searchQuery = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnnouncements();
+  }
+
+  Future<void> _loadAnnouncements() async {
+    try {
+      final records = await AcademicService.getInstructorAnnouncements();
+      AnnouncementStore.items
+        ..clear()
+        ..addAll(
+          records.map(
+            (r) => AnnouncementItem(
+              id: r.id,
+              title: r.title,
+              message: r.content,
+              classCode: r.subjectCode,
+              className: r.className,
+              section: r.section,
+              instructor: r.instructorName,
+              time:
+                  '${r.createdAt.month}/${r.createdAt.day}/${r.createdAt.year}',
+              unread: false,
+            ),
+          ),
+        );
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        showMessage(formatSupabaseError(e));
+      }
+    }
+  }
 
   List<Map<String, String>> get availableClasses =>
       widget.assignedClasses;
@@ -406,7 +447,7 @@ class _InstructorAnnouncementsPageState
                       child: SizedBox(
                         height: 46,
                         child: ElevatedButton.icon(
-                          onPressed: () {
+                          onPressed: () async {
                             final title =
                                 titleController.text.trim();
 
@@ -440,37 +481,38 @@ class _InstructorAnnouncementsPageState
                             }
 
                             final target = availableClasses[index];
-
-                            final announcement = AnnouncementItem(
-                              id: existing?.id ??
-                                  DateTime.now()
-                                      .microsecondsSinceEpoch
-                                      .toString(),
-                              title: title,
-                              message: message,
-                              classCode: target['code'] ?? '',
-                              className: target['subject'] ?? '',
-                              section: target['section'] ?? '',
-                              instructor: target['instructor'] ?? '',
-                              time: existing?.time ?? 'Just now',
-                              unread: true,
-                            );
-
-                            if (existing == null) {
-                              AnnouncementStore.add(announcement);
-                            } else {
-                              AnnouncementStore.update(announcement);
+                            final classId = target['id'] ?? '';
+                            if (classId.isEmpty) {
+                              showMessage('Missing class ID.');
+                              return;
                             }
 
-                            Navigator.pop(dialogContext);
-
-                            refresh();
-
-                            showMessage(
-                              existing == null
-                                  ? 'Announcement published successfully.'
-                                  : 'Announcement updated successfully.',
-                            );
+                            try {
+                              if (existing == null) {
+                                await AcademicService.createAnnouncement(
+                                  classId: classId,
+                                  title: title,
+                                  content: message,
+                                );
+                              } else {
+                                await AcademicService.updateAnnouncement(
+                                  id: existing.id,
+                                  classId: classId,
+                                  title: title,
+                                  content: message,
+                                );
+                              }
+                              if (!dialogContext.mounted) return;
+                              Navigator.pop(dialogContext);
+                              await _loadAnnouncements();
+                              showMessage(
+                                existing == null
+                                    ? 'Announcement published successfully.'
+                                    : 'Announcement updated successfully.',
+                              );
+                            } catch (e) {
+                              showMessage(formatSupabaseError(e));
+                            }
                           },
                           icon: Icon(
                             existing == null
@@ -582,14 +624,16 @@ class _InstructorAnnouncementsPageState
 
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
-                      AnnouncementStore.delete(item.id);
-
-                      Navigator.pop(dialogContext);
-
-                      refresh();
-
-                      showMessage('Announcement deleted.');
+                    onPressed: () async {
+                      try {
+                        await AcademicService.deleteAnnouncement(item.id);
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+                        await _loadAnnouncements();
+                        showMessage('Announcement deleted.');
+                      } catch (e) {
+                        showMessage(formatSupabaseError(e));
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.danger,

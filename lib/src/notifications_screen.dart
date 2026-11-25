@@ -26,6 +26,61 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   String _searchQuery = '';
 
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final notifs = await OrganizerService.getNotifications();
+      final announcements = await AcademicService.getStudentAnnouncements();
+
+      NoticeStore.items
+        ..clear()
+        ..addAll(
+          notifs.map(
+            (n) => NoticeItem(
+              id: n.id,
+              title: n.title,
+              message: n.message,
+              time:
+                  '${n.createdAt.month}/${n.createdAt.day}/${n.createdAt.year}',
+              icon: n.category == 'Classes'
+                  ? Icons.campaign_outlined
+                  : Icons.notifications_outlined,
+              category: n.category,
+              unread: n.isUnread,
+            ),
+          ),
+        );
+
+      AnnouncementStore.items
+        ..clear()
+        ..addAll(
+          announcements.map(
+            (a) => AnnouncementItem(
+              id: a.id,
+              title: a.title,
+              message: a.content,
+              classCode: a.subjectCode,
+              className: a.className,
+              section: a.section,
+              instructor: a.instructorName,
+              time:
+                  '${a.createdAt.month}/${a.createdAt.day}/${a.createdAt.year}',
+              unread: false,
+            ),
+          ),
+        );
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (_) {}
+  }
+
   // ------------------------------------------------------------
   // STUDENT NOTIFICATIONS
   // ------------------------------------------------------------
@@ -64,7 +119,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   // MARK ALL AS READ
   // ------------------------------------------------------------
 
-  void _markAllAsRead() {
+  Future<void> _markAllAsRead() async {
     if (_unreadCount == 0) return;
 
     setState(() {
@@ -73,8 +128,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
     });
 
+    try {
+      await OrganizerService.markAllNotificationsRead();
+    } catch (_) {}
+
     widget.onRefresh();
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('All notifications marked as read.'),
@@ -87,12 +147,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
   // MARK ONE AS READ
   // ------------------------------------------------------------
 
-  void _markAsRead(dynamic notice) {
+  Future<void> _markAsRead(dynamic notice) async {
     if (!notice.unread) return;
 
     setState(() {
       notice.unread = false;
     });
+
+    if (notice is NoticeItem && notice.id != null) {
+      try {
+        await OrganizerService.markNotificationRead(notice.id!);
+      } catch (_) {}
+    }
 
     widget.onRefresh();
   }

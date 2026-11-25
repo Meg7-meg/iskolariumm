@@ -23,6 +23,11 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
   late final TextEditingController _notesController;
   final List<_ClassNote> _savedNotes = [];
 
+  // ---------- Tasks tab state ----------
+  List<ClassAssignmentRecord> _assignments = const [];
+  bool _assignmentsLoading = false;
+  bool _assignmentsLoaded = false;
+
   static const Color _blue = AppColors.primary;
   static const Color _darkBlue = AppColors.navy;
   static const Color _muted = AppColors.textSecondary;
@@ -34,6 +39,53 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
   void initState() {
     super.initState();
     _notesController = TextEditingController();
+    _loadClassNotes();
+  }
+
+  Future<void> _loadClassNotes() async {
+    final item = widget.classItem;
+    if (item.id == null) return;
+    try {
+      final notes = await OrganizerService.getNotes(
+        classId: item.isOfficial ? item.id : null,
+        personalClassId: item.isOfficial ? null : item.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _savedNotes
+          ..clear()
+          ..addAll(
+            notes.map(
+              (n) => _ClassNote(
+                id: n.id,
+                text: n.content,
+                createdAt: n.updatedAt,
+              ),
+            ),
+          );
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadAssignments() async {
+    final item = widget.classItem;
+    if (item.id == null || !item.isOfficial || _assignmentsLoading) return;
+    if (mounted) setState(() => _assignmentsLoading = true);
+    try {
+      final list = await AcademicService.getClassAssignments(item.id!);
+      if (!mounted) return;
+      setState(() {
+        _assignments = list;
+        _assignmentsLoading = false;
+        _assignmentsLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _assignmentsLoading = false;
+        _assignmentsLoaded = true;
+      });
+    }
   }
 
   @override
@@ -42,7 +94,7 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
     super.dispose();
   }
 
-  void _saveClassNote() {
+  Future<void> _saveClassNote() async {
     final noteText = _notesController.text.trim();
 
     if (noteText.isEmpty) {
@@ -55,38 +107,69 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
       return;
     }
 
-    setState(() {
-      _savedNotes.insert(
-        0,
-        _ClassNote(
-          text: noteText,
-          createdAt: DateTime.now(),
+    try {
+      final item = widget.classItem;
+      final saved = await OrganizerService.createNote(
+        classId: item.isOfficial ? item.id : null,
+        personalClassId: item.isOfficial ? null : item.id,
+        subjectLabel: '${item.code} - ${item.name}',
+        content: noteText,
+      );
+      if (!mounted) return;
+      setState(() {
+        _savedNotes.insert(
+          0,
+          _ClassNote(
+            id: saved.id,
+            text: saved.content,
+            createdAt: saved.updatedAt,
+          ),
+        );
+        _notesController.clear();
+      });
+      FocusScope.of(context).unfocus();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Class note saved to Supabase.'),
+          behavior: SnackBarBehavior.floating,
         ),
       );
-      _notesController.clear();
-    });
-
-    FocusScope.of(context).unfocus();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Your class note was saved for this session.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(formatSupabaseError(e)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
-  void _deleteClassNote(int index) {
-    setState(() {
-      _savedNotes.removeAt(index);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note removed.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _deleteClassNote(int index) async {
+    final note = _savedNotes[index];
+    try {
+      if (note.id != null) {
+        await OrganizerService.deleteNote(note.id!);
+      }
+      if (!mounted) return;
+      setState(() {
+        _savedNotes.removeAt(index);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Note removed.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(formatSupabaseError(e)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -301,14 +384,14 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
               Expanded(
                 child: _headerInformation(
                   LucideIcons.calendarDays,
-                  item.day,
+                  item.scheduleSummary,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _headerInformation(
-                  LucideIcons.clock,
-                  item.time,
+                  LucideIcons.mapPin,
+                  item.location,
                 ),
               ),
             ],
@@ -439,7 +522,11 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
   ) {
     switch (_selectedTabIndex) {
       case 1:
-        return _buildTasksTab();
+        // Lazy-load assignments on first visit to the Tasks tab
+        if (!_assignmentsLoaded && !_assignmentsLoading) {
+          _loadAssignments();
+        }
+        return _buildTasksTab(item);
 
       case 2:
         return _buildNotesTab();
@@ -485,13 +572,16 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
         const SizedBox(height: 12),
 
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: _informationCard(
                 icon: LucideIcons.calendarDays,
                 label: 'Schedule',
-                value: item.day,
-                subtitle: item.time,
+                value: item.scheduleMultiline,
+                subtitle: item.effectiveSchedules.isEmpty
+                    ? 'Class schedule'
+                    : '${item.effectiveSchedules.length} weekly meeting${item.effectiveSchedules.length == 1 ? '' : 's'}',
               ),
             ),
             const SizedBox(width: 12),
@@ -645,12 +735,13 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
           const SizedBox(height: 5),
           Text(
             value,
-            maxLines: 2,
+            maxLines: 6,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: _darkBlue,
               fontSize: 13,
               fontWeight: FontWeight.w800,
+              height: 1.35,
             ),
           ),
           const SizedBox(height: 4),
@@ -840,68 +931,201 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
   }
 
   // ------------------------------------------------------------
-  // TASKS TAB
+  // TASKS TAB  — real data from class_assignments
   // ------------------------------------------------------------
 
-  Widget _buildTasksTab() {
+  Widget _buildTasksTab(ClassItem item) {
     return Column(
       key: const ValueKey('tasks'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionTitle(
-          'Class Tasks',
-          'Assignments and activities for this subject',
+          'Class Assignments',
+          'Tasks and activities published by your instructor',
         ),
 
         const SizedBox(height: 14),
 
-        _contentCard(
-          padding: const EdgeInsets.all(25),
-          child: Column(
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: _lightBlue,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: const Center(
-                  child: Icon(
-                    LucideIcons.clipboardList,
-                    color: _blue,
-                    size: 32,
+        if (_assignmentsLoading)
+          _contentCard(
+            padding: const EdgeInsets.all(28),
+            child: const Center(child: CircularProgressIndicator()),
+          )
+        else if (!item.isOfficial)
+          _contentCard(
+            padding: const EdgeInsets.all(24),
+            child: const Text(
+              'Assignments are only available for official instructor-led classes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _muted,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          )
+        else if (_assignments.isEmpty)
+          _contentCard(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: _lightBlue,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      LucideIcons.clipboardList,
+                      color: _blue,
+                      size: 29,
+                    ),
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 18),
-
-              const Text(
-                'No class tasks available',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _darkBlue,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+                const SizedBox(height: 16),
+                const Text(
+                  'No assignments yet',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _darkBlue,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 8),
-
-              const Text(
-                'Class-specific assignments, quizzes, and activities are not connected to this screen yet. Check your Tasks page for the tasks currently available in the app.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 11,
-                  height: 1.6,
+                const SizedBox(height: 6),
+                const Text(
+                  'Your instructor hasn\'t published any assignments for this class yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 11,
+                    height: 1.6,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          )
+        else
+          ..._assignments.map((a) => _buildAssignmentCard(a)),
       ],
+    );
+  }
+
+  Widget _buildAssignmentCard(ClassAssignmentRecord a) {
+    final now = DateTime.now();
+    final bool isOverdue = a.dueAt != null && a.dueAt!.isBefore(now);
+    final Color dueColor = isOverdue ? AppColors.danger : _muted;
+
+    String dueLabel;
+    if (a.dueAt == null) {
+      dueLabel = 'No due date';
+    } else {
+      const months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      dueLabel =
+          'Due ${months[a.dueAt!.month - 1]} ${a.dueAt!.day}, ${a.dueAt!.year}';
+      if (isOverdue) dueLabel += ' · Overdue';
+    }
+
+    return _contentCard(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _lightBlue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Center(
+              child: Icon(LucideIcons.clipboardList, color: _blue, size: 17),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _lightBlue,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        a.category,
+                        style: const TextStyle(
+                          color: _blue,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (a.maxScore != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '${a.maxScore!.toStringAsFixed(0)} pts',
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  a.title,
+                  style: const TextStyle(
+                    color: _darkBlue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
+                ),
+                if (a.description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    a.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _muted,
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(LucideIcons.clock, color: dueColor, size: 11),
+                    const SizedBox(width: 4),
+                    Text(
+                      dueLabel,
+                      style: TextStyle(
+                        color: dueColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1271,7 +1495,7 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
                 _summaryRow(
                   LucideIcons.calendarDays,
                   'Schedule',
-                  '${item.day}, ${item.time}',
+                  item.scheduleMultiline,
                 ),
 
                 const SizedBox(height: 15),
@@ -1303,10 +1527,12 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
 // ------------------------------------------------------------
 
 class _ClassNote {
+  final String? id;
   final String text;
   final DateTime createdAt;
 
   const _ClassNote({
+    this.id,
     required this.text,
     required this.createdAt,
   });

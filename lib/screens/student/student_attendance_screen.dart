@@ -1,92 +1,193 @@
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../services/academic_service.dart';
+import '../../services/supabase_client_provider.dart';
+import '../../src/app_colors.dart';
+import '../../src/design_system.dart';
 
-class StudentAttendanceScreen extends StatelessWidget {
+class StudentAttendanceScreen extends StatefulWidget {
   const StudentAttendanceScreen({super.key});
 
-  static const Color primaryBlue = Color(0xFF1A56DB);
-  static const Color darkBlue = Color(0xFF0D1F3C);
-  static const Color background = Color(0xFFF5F8FF);
-  static const Color muted = Color(0xFF6B7A99);
-  static const Color border = Color(0xFFCFDEF8);
+  @override
+  State<StudentAttendanceScreen> createState() =>
+      _StudentAttendanceScreenState();
+}
+
+class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
+  static const Color primaryBlue = AppColors.primary;
+  static const Color darkBlue = AppColors.navy;
+  static const Color background = AppColors.background;
+  static const Color muted = AppColors.textSecondary;
+  static const Color border = AppColors.border;
   static const Color lightBlue = Color(0xFFEBF2FE);
   static const Color green = Color(0xFF16A36A);
   static const Color red = Color(0xFFE05252);
 
-  final List<_SubjectAttendance> subjects = const [
-    _SubjectAttendance(
-      name: 'Data Science',
-      instructor: 'Mr. Indico',
-      present: 12,
-      absent: 1,
-      percentage: 92,
-    ),
-    _SubjectAttendance(
-      name: 'Integral Calculus',
-      instructor: 'Mrs. Consulta',
-      present: 11,
-      absent: 1,
-      percentage: 92,
-    ),
-    _SubjectAttendance(
-      name: 'Discrete Mathematics',
-      instructor: 'Dr. Alog',
-      present: 10,
-      absent: 1,
-      percentage: 91,
-    ),
-    _SubjectAttendance(
-      name: 'Introduction to Programming',
-      instructor: 'Prof. Makmak',
-      present: 13,
-      absent: 1,
-      percentage: 93,
-    ),
-  ];
+  bool _isLoading = true;
+  String? _error;
+  List<_SubjectAttendance> _subjects = const [];
+  int _totalPresent = 0;
+  int _totalAbsent = 0;
+  int _overallPercent = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAttendance();
+  }
+
+  Future<void> _loadAttendance() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final records = await AcademicService.getStudentAttendance();
+      final byClass = <String, List<AttendanceRecord>>{};
+      for (final r in records) {
+        byClass.putIfAbsent(r.classId, () => []).add(r);
+      }
+
+      int totalPresent = 0;
+      int totalAbsent = 0;
+      final grouped = <_SubjectAttendance>[];
+
+      for (final entry in byClass.entries) {
+        final list = entry.value;
+        final first = list.first;
+        final present = list
+            .where((r) => r.status == 'present' || r.status == 'late')
+            .length;
+        final absent = list.where((r) => r.status == 'absent').length;
+        final total = list.length;
+        final pct = total > 0 ? ((present / total) * 100).round() : 0;
+
+        totalPresent += present;
+        totalAbsent += absent;
+
+        grouped.add(
+          _SubjectAttendance(
+            name: first.className.isEmpty ? first.subjectCode : first.className,
+            instructor: first.instructorName.isEmpty
+                ? 'Instructor'
+                : first.instructorName,
+            present: present,
+            absent: absent,
+            percentage: pct,
+          ),
+        );
+      }
+
+      final totalAll = records.length;
+      final overall = totalAll > 0 ? ((totalPresent / totalAll) * 100).round() : 0;
+
+      if (!mounted) return;
+      setState(() {
+        _subjects = grouped;
+        _totalPresent = totalPresent;
+        _totalAbsent = totalAbsent;
+        _overallPercent = overall;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = formatSupabaseError(e);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
+        child: ResponsiveContainer(
+          maxWidth: 920,
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              _buildHeader(context),
             Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildOverviewCard(),
-                    const SizedBox(height: 22),
-                    _buildSummaryCards(),
-                    const SizedBox(height: 28),
-                    _buildSectionHeader(
-                      'Subject Attendance',
-                      'Your attendance per subject',
-                    ),
-                    const SizedBox(height: 14),
-                    ...subjects.map(
-                      (subject) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildSubjectCard(subject),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildSectionHeader(
-                      'Attendance Information',
-                      'Important reminders',
-                    ),
-                    const SizedBox(height: 14),
-                    _buildInformationCard(),
-                  ],
-                ),
-              ),
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: primaryBlue),
+                    )
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, textAlign: TextAlign.center),
+                                const SizedBox(height: 12),
+                                FilledButton(
+                                  onPressed: _loadAttendance,
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : RefreshIndicator(
+                          color: primaryBlue,
+                          onRefresh: _loadAttendance,
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildOverviewCard(),
+                                const SizedBox(height: 22),
+                                _buildSummaryCards(),
+                                const SizedBox(height: 28),
+                                _buildSectionHeader(
+                                  'Subject Attendance',
+                                  'Your attendance per subject',
+                                ),
+                                const SizedBox(height: 14),
+                                if (_subjects.isEmpty)
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(22),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(color: border),
+                                    ),
+                                    child: const Text(
+                                      'No attendance records yet. Records marked by your instructors will appear here.',
+                                      style: TextStyle(color: muted, fontSize: 13),
+                                    ),
+                                  )
+                                else
+                                  ..._subjects.map(
+                                    (subject) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _buildSubjectCard(subject),
+                                    ),
+                                  ),
+                                const SizedBox(height: 16),
+                                _buildSectionHeader(
+                                  'Attendance Information',
+                                  'Important reminders',
+                                ),
+                                const SizedBox(height: 14),
+                                _buildInformationCard(),
+                              ],
+                            ),
+                          ),
+                        ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -235,9 +336,9 @@ class StudentAttendanceScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '92%',
-                      style: TextStyle(
+                    Text(
+                      '$_overallPercent%',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 48,
                         fontWeight: FontWeight.w800,
@@ -327,7 +428,7 @@ class StudentAttendanceScreen extends StatelessWidget {
           child: _buildStatCard(
             icon: LucideIcons.checkCircle2,
             title: 'Present',
-            value: '46',
+            value: '$_totalPresent',
             subtitle: 'Classes attended',
             color: green,
             iconBackground: const Color(0xFFE7F8EF),
@@ -338,7 +439,7 @@ class StudentAttendanceScreen extends StatelessWidget {
           child: _buildStatCard(
             icon: LucideIcons.xCircle,
             title: 'Absent',
-            value: '4',
+            value: '$_totalAbsent',
             subtitle: 'Classes missed',
             color: red,
             iconBackground: const Color(0xFFFFEEEE),

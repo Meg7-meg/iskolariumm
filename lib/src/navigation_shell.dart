@@ -20,7 +20,7 @@ class IskolariumShell extends StatefulWidget {
 class _IskolariumShellState extends State<IskolariumShell> {
   int selectedIndex = 0;
   bool showNotifications = false;
-  DateTime selectedDate = DateTime(2026, 9, 26);
+  DateTime selectedDate = DateTime.now();
 
   void refresh() => setState(() {});
 
@@ -83,7 +83,7 @@ void openStudySessions() {
         onAdded: () {
           refresh();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Item added to this prototype.')),
+            const SnackBar(content: Text('Saved to your account.')),
           );
         },
       ),
@@ -259,32 +259,49 @@ void openStudySessions() {
       const ProfilePage(),
     ];
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      extendBody: true,
-      body: SafeArea(
-        child: showNotifications
-            ? NotificationsPage(onBack: closeNotifications, onRefresh: refresh)
-            : IndexedStack(index: selectedIndex, children: pages),
+    const destinations = [
+      AcademicNavDestination(icon: LucideIcons.layoutDashboard, label: 'Overview'),
+      AcademicNavDestination(icon: LucideIcons.bookOpen, label: 'Classes'),
+      AcademicNavDestination(icon: LucideIcons.calendarDays, label: 'Calendar'),
+      AcademicNavDestination(icon: LucideIcons.checkSquare, label: 'Tasks'),
+      AcademicNavDestination(icon: LucideIcons.userRound, label: 'Profile'),
+    ];
+
+    return AcademicNavigationShell(
+      roleLabel: 'Student Portal',
+      destinations: destinations,
+      selectedIndex: selectedIndex,
+      onSelected: (index) {
+        setState(() {
+          showNotifications = false;
+          selectedIndex = index;
+        });
+      },
+      sidebarAction: SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: openAddBottomSheet,
+          icon: const Icon(LucideIcons.plus, size: 16),
+          label: const Text('Quick Add'),
+        ),
       ),
-      floatingActionButton: showNotifications || selectedIndex == 4
+      floatingActionButton: showNotifications ||
+              selectedIndex != 0 ||
+              MediaQuery.sizeOf(context).width >= AppBreakpoints.desktop
           ? null
           : FloatingActionButton(
               onPressed: openAddBottomSheet,
-              backgroundColor: primaryBlue,
+              backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              shape: const CircleBorder(),
-              elevation: 3,
-              child: const Icon(Icons.add, size: 32),
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.lg),
+              ),
+              child: const Icon(LucideIcons.plus, size: 22),
             ),
-      bottomNavigationBar: GlassNavigationIsland(
-        selectedIndex: selectedIndex,
-        onItemSelected: (index) {
-          setState(() {
-            selectedIndex = index;
-          });
-        },
-      ),
+      body: showNotifications
+          ? NotificationsPage(onBack: closeNotifications, onRefresh: refresh)
+          : IndexedStack(index: selectedIndex, children: pages),
     );
   }
 }

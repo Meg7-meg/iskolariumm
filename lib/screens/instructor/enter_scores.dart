@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../services/academic_service.dart';
+import '../../services/class_service.dart';
+import '../../services/supabase_client_provider.dart';
 import '../../src/app_colors.dart';
+import '../../src/design_system.dart';
 import 'instructor_dashboard.dart';
 
 // ============================================================
@@ -18,7 +22,22 @@ const Color _scoreBackground = AppColors.background;
 // ============================================================
 
 class InstructorEnterScoresScreen extends StatefulWidget {
-  const InstructorEnterScoresScreen({super.key});
+  final Map<String, String>? classItem;
+  final String? assignmentId;
+  final String? quizId;
+  final String? initialTitle;
+  final String? initialCategory;
+  final double? initialMaxScore;
+
+  const InstructorEnterScoresScreen({
+    super.key,
+    this.classItem,
+    this.assignmentId,
+    this.quizId,
+    this.initialTitle,
+    this.initialCategory,
+    this.initialMaxScore,
+  });
 
   @override
   State<InstructorEnterScoresScreen> createState() =>
@@ -27,25 +46,22 @@ class InstructorEnterScoresScreen extends StatefulWidget {
 
 class _InstructorEnterScoresScreenState
     extends State<InstructorEnterScoresScreen> {
-  // ============================================================
-  // SAMPLE STUDENT DATA
-  // ============================================================
-
-  final List<Map<String, dynamic>> students = [
-    {'name': 'Charlie Mirk', 'id': '2023-001', 'score': '18'},
-    {'name': 'Adolf Digler', 'id': '2023-002', 'score': '0'},
-    {'name': 'Michael Epstein', 'id': '2023-003', 'score': '22'},
-    {'name': 'Dana Santos', 'id': '2023-004', 'score': '16'},
-    {'name': 'Eli Tan', 'id': '2023-005', 'score': ''},
-  ];
-
+  final List<Map<String, dynamic>> students = [];
   final List<TextEditingController> scoreControllers = [];
+  List<ClassAssignmentRecord> _tasks = const [];
+  List<QuizRecord> _quizzes = const [];
+  List<ScoreRecord> _existingScores = const [];
+  String? _selectedAssignmentId;
+  String? _selectedQuizId;
+  bool _isLoading = true;
+  String? _loadError;
+  String _category = 'assignment';
 
-  final TextEditingController quizTitleController =
-      TextEditingController(text: 'Quiz 2: Normalization');
-
+  final TextEditingController quizTitleController = TextEditingController();
   final TextEditingController maxScoreController =
       TextEditingController(text: '20');
+
+  bool get _hasAnyAssessment => _tasks.isNotEmpty || _quizzes.isNotEmpty;
 
   // ============================================================
   // INITIALIZATION
@@ -54,13 +70,164 @@ class _InstructorEnterScoresScreenState
   @override
   void initState() {
     super.initState();
+    _selectedAssignmentId = widget.assignmentId;
+    _selectedQuizId = widget.quizId;
+    if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
+      _category = widget.initialCategory!.toLowerCase();
+    }
+    if (widget.initialTitle != null && widget.initialTitle!.isNotEmpty) {
+      quizTitleController.text = widget.initialTitle!;
+    }
+    if (widget.initialMaxScore != null && widget.initialMaxScore! > 0) {
+      maxScoreController.text = widget.initialMaxScore!.toStringAsFixed(0);
+    }
+    _loadStudents();
+  }
 
-    for (final student in students) {
-      scoreControllers.add(
-        TextEditingController(
-          text: student['score'] as String,
-        ),
-      );
+  Future<void> _loadStudents() async {
+    final classId = widget.classItem?['id'];
+    if (classId == null || classId.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Please open Enter Scores from a specific class.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      final results = await Future.wait([
+        ClassService.getClassEnrollments(classId),
+        AcademicService.getClassAssignments(classId),
+        AcademicService.getClassQuizzes(classId),
+        AcademicService.getClassScores(classId),
+      ]);
+
+      final enrollments = results[0] as List<EnrollmentRecord>;
+      final tasks = results[1] as List<ClassAssignmentRecord>;
+      final quizzes = results[2] as List<QuizRecord>;
+      final scores = results[3] as List<ScoreRecord>;
+
+      final approved =
+          enrollments.where((e) => e.status == 'approved').toList();
+
+      for (final c in scoreControllers) {
+        c.dispose();
+      }
+      scoreControllers.clear();
+      students.clear();
+
+      for (final e in approved) {
+        students.add({
+          'name': e.studentName,
+          'id': e.studentId,
+          'score': '',
+        });
+        scoreControllers.add(TextEditingController());
+      }
+
+      _tasks = tasks;
+      _quizzes = quizzes;
+      _existingScores = scores;
+
+      // Auto-select passed task/quiz or first available task/quiz
+      if (_selectedAssignmentId != null) {
+        final match =
+            tasks.where((t) => t.id == _selectedAssignmentId).firstOrNull;
+        if (match != null) {
+          _applySelectedTask(match);
+        } else {
+          _selectedAssignmentId = null;
+        }
+      } else if (_selectedQuizId != null) {
+        final match =
+            quizzes.where((q) => q.id == _selectedQuizId).firstOrNull;
+        if (match != null) {
+          _applySelectedQuiz(match);
+        } else {
+          _selectedQuizId = null;
+        }
+      }
+
+      if (_selectedAssignmentId == null && _selectedQuizId == null) {
+        if (tasks.isNotEmpty) {
+          _applySelectedTask(tasks.first);
+        } else if (quizzes.isNotEmpty) {
+          _applySelectedQuiz(quizzes.first);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = formatSupabaseError(e);
+      });
+    }
+  }
+
+  void _applySelectedTask(ClassAssignmentRecord task) {
+    _selectedAssignmentId = task.id;
+    _selectedQuizId = null;
+    _category = task.category.toLowerCase();
+    quizTitleController.text = task.title;
+    final defaultMax = task.maxScore != null && task.maxScore! > 0
+        ? task.maxScore!
+        : 100.0;
+
+    final matched = _existingScores
+        .where((s) =>
+            s.assignmentId == task.id ||
+            (s.assignmentId == null &&
+                s.quizId == null &&
+                s.assessmentName.toLowerCase() == task.title.toLowerCase()))
+        .toList();
+
+    final maxToUse = matched.isNotEmpty ? matched.first.maxScore : defaultMax;
+    maxScoreController.text = maxToUse == maxToUse.roundToDouble()
+        ? maxToUse.toStringAsFixed(0)
+        : maxToUse.toString();
+
+    _fillStudentControllers(matched);
+  }
+
+  void _applySelectedQuiz(QuizRecord quiz) {
+    _selectedQuizId = quiz.id;
+    _selectedAssignmentId = null;
+    _category = 'quiz';
+    quizTitleController.text = quiz.title;
+    final matched = _existingScores
+        .where((s) =>
+            s.quizId == quiz.id ||
+            (s.assignmentId == null &&
+                s.quizId == null &&
+                s.assessmentName.toLowerCase() == quiz.title.toLowerCase()))
+        .toList();
+    final maxToUse =
+        matched.isNotEmpty ? matched.first.maxScore : quiz.maxScore;
+    maxScoreController.text = maxToUse == maxToUse.roundToDouble()
+        ? maxToUse.toStringAsFixed(0)
+        : maxToUse.toString();
+
+    _fillStudentControllers(matched);
+  }
+
+  void _fillStudentControllers(List<ScoreRecord> matched) {
+    final byStudent = {for (final s in matched) s.studentId: s.score};
+    for (int i = 0; i < students.length; i++) {
+      final sid = students[i]['id'] as String;
+      final existing = byStudent[sid];
+      scoreControllers[i].text = existing == null
+          ? ''
+          : (existing == existing.roundToDouble()
+              ? existing.toStringAsFixed(0)
+              : existing.toString());
     }
   }
 
@@ -86,83 +253,283 @@ class _InstructorEnterScoresScreenState
         .length;
   }
 
+  String get _categoryLabel =>
+      '${_category[0].toUpperCase()}${_category.substring(1)}';
+
+  String get _formattedToday {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final now = DateTime.now();
+    return '${months[now.month - 1]} ${now.day}, ${now.year}';
+  }
+
   // ============================================================
-  // EDIT QUIZ DETAILS
+  // EDIT ASSESSMENT DETAILS
   // ============================================================
 
   void openEditDetails() {
+    String selectedCategory = _category;
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'Edit Quiz Details',
-            style: TextStyle(
-              color: _scoreNavy,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: quizTitleController,
-                decoration: _scoreInputDecoration(
-                  label: 'Quiz title',
-                  icon: LucideIcons.fileText,
-                ),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
               ),
-
-              const SizedBox(height: 16),
-
-              TextField(
-                controller: maxScoreController,
-                keyboardType: TextInputType.number,
-                decoration: _scoreInputDecoration(
-                  label: 'Maximum score',
-                  icon: LucideIcons.calculator,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text(
-                'Cancel',
+              title: const Text(
+                'Edit Assessment Details',
                 style: TextStyle(
-                  color: _scoreMuted,
-                  fontWeight: FontWeight.w700,
+                  color: _scoreNavy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedCategory,
+                    decoration: _scoreInputDecoration(
+                      label: 'Category',
+                      icon: LucideIcons.tag,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'quiz', child: Text('Quiz')),
+                      DropdownMenuItem(
+                        value: 'activity',
+                        child: Text('Activity'),
+                      ),
+                      DropdownMenuItem(value: 'exam', child: Text('Exam')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => selectedCategory = value);
+                      }
+                    },
+                  ),
 
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                setState(() {});
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(11),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: quizTitleController,
+                    decoration: _scoreInputDecoration(
+                      label: 'Assessment title',
+                      icon: LucideIcons.fileText,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: maxScoreController,
+                    keyboardType: TextInputType.number,
+                    decoration: _scoreInputDecoration(
+                      label: 'Maximum score',
+                      icon: LucideIcons.calculator,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: _scoreMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    setState(() {
+                      _category = selectedCategory;
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                  ),
+                  child: const Text(
+                    'Save details',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openPastAssessments() async {
+    final classId = widget.classItem?['id'];
+    if (classId == null || classId.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return FutureBuilder<List<ScoreRecord>>(
+          future: AcademicService.getClassScores(classId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                height: 220,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return SizedBox(
+                height: 220,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(formatSupabaseError(snapshot.error!)),
+                  ),
+                ),
+              );
+            }
+            final records = snapshot.data ?? [];
+            final grouped = <String, List<ScoreRecord>>{};
+            for (final r in records) {
+              final key = '${r.category}::${r.assessmentName}';
+              grouped.putIfAbsent(key, () => []).add(r);
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Past Assessments',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: _scoreNavy,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Tap an assessment to load its scores into the form.',
+                      style: TextStyle(fontSize: 12, color: _scoreMuted),
+                    ),
+                    const SizedBox(height: 14),
+                    if (grouped.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: Center(
+                          child: Text(
+                            'No recorded scores for this class yet.',
+                            style: TextStyle(color: _scoreMuted),
+                          ),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 360),
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: grouped.entries.map((entry) {
+                            final first = entry.value.first;
+                            final catLabel = first.category.isEmpty
+                                ? 'Quiz'
+                                : '${first.category[0].toUpperCase()}${first.category.substring(1)}';
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                backgroundColor: AppColors.primaryLight,
+                                child: const Icon(
+                                  LucideIcons.fileText,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                              ),
+                              title: Text(
+                                first.assessmentName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: _scoreNavy,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '$catLabel · Max ${first.maxScore.toStringAsFixed(0)} · ${entry.value.length} recorded',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: _scoreMuted,
+                                ),
+                              ),
+                              trailing: const Icon(
+                                LucideIcons.chevronRight,
+                                size: 18,
+                                color: _scoreMuted,
+                              ),
+                              onTap: () {
+                                Navigator.pop(sheetContext);
+                                final byStudent = {
+                                  for (final s in entry.value)
+                                    s.studentId: s.score,
+                                };
+                                setState(() {
+                                  _category = first.category.isEmpty
+                                      ? 'quiz'
+                                      : first.category.toLowerCase();
+                                  quizTitleController.text =
+                                      first.assessmentName;
+                                  maxScoreController.text =
+                                      first.maxScore.toStringAsFixed(0);
+                                  for (int i = 0; i < students.length; i++) {
+                                    final sid = students[i]['id'] as String;
+                                    final existing = byStudent[sid];
+                                    scoreControllers[i].text = existing == null
+                                        ? ''
+                                        : (existing == existing.roundToDouble()
+                                            ? existing.toStringAsFixed(0)
+                                            : existing.toString());
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              child: const Text(
-                'Save details',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -173,26 +540,65 @@ class _InstructorEnterScoresScreenState
   // ============================================================
 
   void openReviewScores() {
+    if (_selectedAssignmentId == null && _selectedQuizId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select an existing task or quiz before entering scores.'),
+        ),
+      );
+      return;
+    }
+
+    final maxVal = double.tryParse(maxScoreController.text.trim()) ?? 0;
+    if (maxVal <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum score must be greater than 0.')),
+      );
+      return;
+    }
+
     final scoreData = <Map<String, String>>[];
 
     for (int i = 0; i < students.length; i++) {
+      final raw = scoreControllers[i].text.trim();
+      if (raw.isNotEmpty) {
+        final parsed = double.tryParse(raw);
+        if (parsed == null || parsed < 0 || parsed > maxVal) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Invalid score for ${students[i]['name']}: must be 0 to $maxVal.',
+              ),
+            ),
+          );
+          return;
+        }
+      }
       scoreData.add({
         'name': students[i]['name'] as String,
         'id': students[i]['id'] as String,
-        'score': scoreControllers[i].text.trim(),
+        'score': raw,
       });
     }
 
-    Navigator.push(
+    Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => InstructorReviewScoresScreen(
+          classId: widget.classItem?['id'] ?? '',
+          assignmentId: _selectedAssignmentId,
+          quizId: _selectedQuizId,
+          category: _category,
           quizTitle: quizTitleController.text,
           maxScore: maxScoreController.text,
           students: scoreData,
         ),
       ),
-    );
+    ).then((saved) {
+      if (saved == true && mounted) {
+        _loadStudents();
+      }
+    });
   }
 
   // ============================================================
@@ -445,17 +851,17 @@ class _InstructorEnterScoresScreenState
 
           const SizedBox(height: 9),
 
-          const Row(
+          Row(
             children: [
-              Icon(
+              const Icon(
                 LucideIcons.bookOpen,
                 size: 13,
                 color: _scoreMuted,
               ),
-              SizedBox(width: 6),
+              const SizedBox(width: 6),
               Text(
-                'CS 304 · Section A',
-                style: TextStyle(
+                '${widget.classItem?['code'] ?? 'Class'} · ${widget.classItem?['section'] ?? 'Section A'}',
+                style: const TextStyle(
                   fontSize: 11,
                   color: _scoreMuted,
                   fontWeight: FontWeight.w600,
@@ -466,17 +872,17 @@ class _InstructorEnterScoresScreenState
 
           const SizedBox(height: 7),
 
-          const Row(
+          Row(
             children: [
-              Icon(
+              const Icon(
                 LucideIcons.calendarDays,
                 size: 13,
                 color: _scoreMuted,
               ),
-              SizedBox(width: 6),
+              const SizedBox(width: 6),
               Text(
-                'Quiz · Sep 28, 2026',
-                style: TextStyle(
+                '$_categoryLabel · $_formattedToday',
+                style: const TextStyle(
                   fontSize: 11,
                   color: _scoreMuted,
                   fontWeight: FontWeight.w600,
@@ -624,14 +1030,29 @@ class _InstructorEnterScoresScreenState
             ),
           ],
         ),
+
+        actions: [
+          IconButton(
+            tooltip: 'Past assessments',
+            icon: const Icon(
+              LucideIcons.history,
+              size: 20,
+              color: _scoreNavy,
+            ),
+            onPressed: _openPastAssessments,
+          ),
+        ],
       ),
 
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 25),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: ResponsiveContainer(
+            maxWidth: 920,
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // STEP INDICATOR
               Row(
                 children: [
@@ -683,10 +1104,123 @@ class _InstructorEnterScoresScreenState
 
               const SizedBox(height: 20),
 
-              // QUIZ INFORMATION
-              buildQuizInformationCard(),
+              if (!_hasAnyAssessment)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: _scoreBorder),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(
+                        LucideIcons.clipboardList,
+                        size: 34,
+                        color: AppColors.primary,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'No tasks or quizzes yet',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _scoreNavy,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Create a task, assignment, or quiz in this class before entering scores.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _scoreMuted,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                // TASK / QUIZ SELECTOR
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _scoreBorder),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _selectedAssignmentId != null
+                          ? 'task:${_selectedAssignmentId!}'
+                          : (_selectedQuizId != null
+                              ? 'quiz:${_selectedQuizId!}'
+                              : null),
+                      hint: const Text('Select task or quiz'),
+                      items: [
+                        ..._tasks.map(
+                          (t) => DropdownMenuItem(
+                            value: 'task:${t.id}',
+                            child: Text(
+                              '${t.category}: ${t.title}',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: _scoreNavy,
+                              ),
+                            ),
+                          ),
+                        ),
+                        ..._quizzes.map(
+                          (q) => DropdownMenuItem(
+                            value: 'quiz:${q.id}',
+                            child: Text(
+                              'Quiz: ${q.title}',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: _scoreNavy,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val == null) return;
+                        setState(() {
+                          if (val.startsWith('task:')) {
+                            final id = val.substring(5);
+                            final t = _tasks.where((e) => e.id == id).firstOrNull;
+                            if (t != null) _applySelectedTask(t);
+                          } else if (val.startsWith('quiz:')) {
+                            final id = val.substring(5);
+                            final q =
+                                _quizzes.where((e) => e.id == id).firstOrNull;
+                            if (q != null) _applySelectedQuiz(q);
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // QUIZ INFORMATION
+                buildQuizInformationCard(),
+              ],
 
               const SizedBox(height: 23),
+
+              if (_hasAnyAssessment) ...[
 
               // STUDENT LIST HEADER
               Row(
@@ -748,24 +1282,48 @@ class _InstructorEnterScoresScreenState
                     color: _scoreBorder,
                   ),
                 ),
-                child: Column(
-                  children: [
-                    ...List.generate(
-                      students.length,
-                      (index) => Column(
-                        children: [
-                          buildStudentRow(index),
-
-                          if (index != students.length - 1)
-                            const Divider(
-                              height: 1,
-                              color: AppColors.divider,
+                child: _isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _loadError != null
+                        ? Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              _loadError!,
+                              style: const TextStyle(color: _scoreMuted),
                             ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                          )
+                        : students.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text(
+                                  'No approved students enrolled in this class yet.',
+                                  style: TextStyle(
+                                    color: _scoreMuted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                children: [
+                                  ...List.generate(
+                                    students.length,
+                                    (index) => Column(
+                                      children: [
+                                        buildStudentRow(index),
+
+                                        if (index != students.length - 1)
+                                          const Divider(
+                                            height: 1,
+                                            color: AppColors.divider,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
               ),
 
               const SizedBox(height: 15),
@@ -852,7 +1410,9 @@ class _InstructorEnterScoresScreenState
                   ),
                 ),
               ),
+              ],
             ],
+            ),
           ),
         ),
       ),
@@ -939,12 +1499,20 @@ class _InstructorEnterScoresScreenState
 // ============================================================
 
 class InstructorReviewScoresScreen extends StatelessWidget {
+  final String classId;
+  final String? assignmentId;
+  final String? quizId;
+  final String category;
   final String quizTitle;
   final String maxScore;
   final List<Map<String, String>> students;
 
   const InstructorReviewScoresScreen({
     super.key,
+    required this.classId,
+    this.assignmentId,
+    this.quizId,
+    required this.category,
     required this.quizTitle,
     required this.maxScore,
     required this.students,
@@ -1274,65 +1842,48 @@ class InstructorReviewScoresScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(13),
                     ),
                   ),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (dialogContext) {
-                        return AlertDialog(
-                          backgroundColor: AppColors.surface,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          icon: const Icon(
-                            LucideIcons.database,
-                            color: AppColors.primary,
-                            size: 32,
-                          ),
-                          title: const Text(
-                            'Prototype only',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _scoreNavy,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 17,
-                            ),
-                          ),
-                          content: const Text(
-                            'The scores have been reviewed, but they are not saved to a database yet.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _scoreMuted,
-                              fontSize: 12,
-                              height: 1.5,
-                            ),
-                          ),
-                          actions: [
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.pop(dialogContext);
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Got it',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
+                  onPressed: () async {
+                    if (classId.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Missing class ID.')),
+                      );
+                      return;
+                    }
+
+                    final maxVal = double.tryParse(maxScore.trim()) ?? 0;
+                    final entries = <String, double>{};
+                    for (final s in students) {
+                      final raw = (s['score'] ?? '').trim();
+                      if (raw.isEmpty) continue;
+                      final val = double.tryParse(raw);
+                      if (val != null) {
+                        entries[s['id']!] = val;
+                      }
+                    }
+
+                    try {
+                      await AcademicService.saveAssessmentScores(
+                        classId: classId,
+                        assignmentId: assignmentId,
+                        quizId: quizId,
+                        assessmentName: quizTitle,
+                        category: category,
+                        maxScore: maxVal,
+                        studentScores: entries,
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Scores saved to Supabase.'),
+                        ),
+                      );
+                      Navigator.pop(context, true);
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(formatSupabaseError(e))),
+                      );
+                    }
                   },
                   icon: const Icon(
                     LucideIcons.save,

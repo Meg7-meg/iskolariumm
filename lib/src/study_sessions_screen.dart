@@ -7,6 +7,7 @@ part of '../main.dart';
 // ============================================================
 
 class StudySession {
+  String? id;
   String title;
   String subject;
   String description;
@@ -16,6 +17,7 @@ class StudySession {
   bool isCompleted;
 
   StudySession({
+    this.id,
     required this.title,
     required this.subject,
     required this.description,
@@ -57,6 +59,41 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
 
   final List<StudySession> _sessions = [];
   String _selectedFilter = 'All';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessions();
+  }
+
+  Future<void> _loadSessions() async {
+    try {
+      final records = await OrganizerService.getStudySessions();
+      if (!mounted) return;
+      setState(() {
+        _sessions
+          ..clear()
+          ..addAll(
+            records.map((r) {
+              final parts = r.startTime.split(':');
+              final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 9 : 9;
+              final minute =
+                  parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+              return StudySession(
+                id: r.id,
+                title: r.title,
+                subject: r.subject,
+                description: r.description,
+                date: r.sessionDate,
+                time: TimeOfDay(hour: hour, minute: minute),
+                duration: r.durationMinutes,
+                isCompleted: r.isCompleted,
+              );
+            }),
+          );
+      });
+    } catch (_) {}
+  }
 
   List<StudySession> get _filteredSessions {
     final filtered = _sessions.where((session) {
@@ -1137,60 +1174,64 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                             const SizedBox(width: 11),
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: () {
+                                onPressed: () async {
                                   if (!formKey.currentState!.validate()) {
                                     return;
                                   }
 
-                                  setState(() {
-                                    if (isEditing) {
-                                      // Update the existing session.
-                                      session.title =
-                                          titleController.text.trim();
+                                  final timeStr =
+                                      '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
 
-                                      session.subject =
-                                          subjectController.text.trim();
-
-                                      session.description =
-                                          descriptionController.text.trim();
-
-                                      session.date = selectedDate;
-                                      session.time = selectedTime;
-                                      session.duration = selectedDuration;
-
-                                      // Completion status is preserved.
+                                  try {
+                                    if (isEditing && session.id != null) {
+                                      await OrganizerService.updateStudySession(
+                                        id: session.id!,
+                                        title: titleController.text.trim(),
+                                        subject: subjectController.text.trim(),
+                                        description:
+                                            descriptionController.text.trim(),
+                                        sessionDate: selectedDate,
+                                        startTime: timeStr,
+                                        durationMinutes: selectedDuration,
+                                      );
                                     } else {
-                                      // Create a new session.
-                                      _sessions.add(
-                                        StudySession(
-                                          title:
-                                              titleController.text.trim(),
-                                          subject:
-                                              subjectController.text.trim(),
-                                          description:
-                                              descriptionController.text.trim(),
-                                          date: selectedDate,
-                                          time: selectedTime,
-                                          duration: selectedDuration,
-                                        ),
+                                      await OrganizerService.createStudySession(
+                                        title: titleController.text.trim(),
+                                        subject: subjectController.text.trim(),
+                                        description:
+                                            descriptionController.text.trim(),
+                                        sessionDate: selectedDate,
+                                        startTime: timeStr,
+                                        durationMinutes: selectedDuration,
                                       );
                                     }
 
-                                    _selectedFilter = 'All';
-                                  });
+                                    await _loadSessions();
+                                    if (!mounted) return;
+                                    setState(() => _selectedFilter = 'All');
+                                    if (dialogContext.mounted) {
+                                      Navigator.pop(dialogContext);
+                                    }
 
-                                  Navigator.pop(dialogContext);
-
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        isEditing
-                                            ? 'Study session updated successfully.'
-                                            : 'Study session created successfully.',
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          isEditing
+                                              ? 'Study session updated successfully.'
+                                              : 'Study session created successfully.',
+                                        ),
+                                        behavior: SnackBarBehavior.floating,
                                       ),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
+                                    );
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(formatSupabaseError(e)),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  }
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _blue,
@@ -1321,11 +1362,27 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
   // SESSION ACTIONS
   // ============================================================
 
-  void _toggleCompleted(StudySession session) {
+  Future<void> _toggleCompleted(StudySession session) async {
+    final next = !session.isCompleted;
     setState(() {
-      session.isCompleted = !session.isCompleted;
+      session.isCompleted = next;
     });
 
+    if (session.id != null) {
+      try {
+        await OrganizerService.toggleStudySessionCompleted(session.id!, next);
+      } catch (e) {
+        if (mounted) {
+          setState(() => session.isCompleted = !next);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(formatSupabaseError(e))),
+          );
+          return;
+        }
+      }
+    }
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1387,6 +1444,19 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
     );
 
     if (confirm == true && mounted) {
+      if (session.id != null) {
+        try {
+          await OrganizerService.deleteStudySession(session.id!);
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(formatSupabaseError(e))),
+            );
+          }
+          return;
+        }
+      }
+
       setState(() {
         _sessions.remove(session);
       });

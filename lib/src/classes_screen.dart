@@ -25,18 +25,87 @@ class _ClassesPageState extends State<ClassesPage> {
   static const Color _lightBlue = AppColors.primaryLight;
   static const Color _border = AppColors.border;
 
-  late final List<ClassItem> _classes;
+  final List<ClassItem> _classes = [];
   final TextEditingController _searchController =
       TextEditingController();
 
   String _filter = 'All';
   String _search = '';
+  bool _isLoading = true;
+  String? _error;
+  List<Map<String, dynamic>> _pendingEnrollments = const [];
 
   @override
   void initState() {
     super.initState();
-    _classes = List<ClassItem>.of(sampleClasses);
-    _syncStudentEnrollments();
+    _loadClasses();
+  }
+
+  Future<void> _loadClasses() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final official = await ClassService.getStudentApprovedClasses();
+      final personal = await ClassService.getStudentPersonalClasses();
+      final pending = await ClassService.getStudentPendingEnrollments();
+
+      final loaded = <ClassItem>[
+        ...official.map(
+          (c) => ClassItem(
+            id: c.id,
+            code: c.subjectCode.isEmpty ? 'CLASS' : c.subjectCode,
+            name: c.className,
+            instructor: c.instructorName,
+            location: c.room.isEmpty ? 'TBA' : c.room,
+            day: c.scheduleDay.isEmpty ? 'TBA' : c.scheduleDay,
+            time: c.scheduleTime.isEmpty ? 'TBA' : c.scheduleTime,
+            schedules: c.effectiveSchedules,
+            progress: 1.0,
+            section: c.section,
+            isOfficial: true,
+            enrollmentCode: c.enrollmentCode,
+            description: c.description,
+          ),
+        ),
+        ...personal.map(
+          (p) => ClassItem(
+            id: p.id,
+            code: p.subjectCode,
+            name: p.className,
+            instructor:
+                p.instructorName.isEmpty ? 'Personal Class' : p.instructorName,
+            location: p.location.isEmpty ? 'Personal' : p.location,
+            day: p.scheduleDay.isEmpty ? 'Flexible' : p.scheduleDay,
+            time: p.scheduleTime.isEmpty ? 'Flexible' : p.scheduleTime,
+            schedules: p.schedules,
+            progress: 1.0,
+            section: p.section,
+            isOfficial: false,
+          ),
+        ),
+      ];
+
+      if (!mounted) return;
+      setState(() {
+        _classes
+          ..clear()
+          ..addAll(loaded);
+        _pendingEnrollments = pending;
+        _isLoading = false;
+      });
+      _syncStudentEnrollments();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = formatSupabaseError(e);
+      });
+    }
   }
 
   // Keep the shared enrollment list updated so announcements can be
@@ -65,44 +134,28 @@ class _ClassesPageState extends State<ClassesPage> {
   // FILTER LOGIC
   // ------------------------------------------------------------
 
-  bool _matchesDay(String day, int weekday) {
-    const days = [
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-      'sunday',
-    ];
-
+  bool _matchesDay(ClassItem item, int weekday) {
     if (weekday < 1 || weekday > 7) return false;
+    final list = item.effectiveSchedules;
+    if (list.isNotEmpty) {
+      return list.any((s) => s.weekday == weekday);
+    }
 
-    final normalized = day.trim().toLowerCase();
-    final target = days[weekday - 1];
+    final normalized = item.day.trim().toLowerCase();
+    final target = ClassMeetingSchedule.daysOfWeek[weekday - 1].toLowerCase();
+    final shortTarget = target.substring(0, 3);
 
-    return normalized == target ||
-        normalized == target.substring(0, 3);
+    return normalized.contains(target) || normalized.contains(shortTarget);
   }
 
-  bool _isScheduledThisWeek(String day) {
-    const days = [
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-      'sunday',
-    ];
-
-    final normalized = day.trim().toLowerCase();
-
-    return days.any(
-      (value) =>
-          normalized == value ||
-          normalized == value.substring(0, 3),
-    );
+  bool _isScheduledThisWeek(ClassItem item) {
+    if (item.effectiveSchedules.isNotEmpty) return true;
+    final normalized = item.day.trim().toLowerCase();
+    return ClassMeetingSchedule.daysOfWeek.any((value) {
+      final lower = value.toLowerCase();
+      return normalized.contains(lower) ||
+          normalized.contains(lower.substring(0, 3));
+    });
   }
 
   List<ClassItem> get _filteredClasses {
@@ -118,13 +171,14 @@ class _ClassesPageState extends State<ClassesPage> {
         item.location,
         item.day,
         item.time,
+        item.scheduleSummary,
       ].join(' ').toLowerCase();
 
       final matchesSearch = searchableText.contains(query);
 
       final matchesFilter = switch (_filter) {
-        'Today' => _matchesDay(item.day, today),
-        'This week' => _isScheduledThisWeek(item.day),
+        'Today' => _matchesDay(item, today),
+        'This week' => _isScheduledThisWeek(item),
         _ => true,
       };
 
@@ -133,10 +187,56 @@ class _ClassesPageState extends State<ClassesPage> {
   }
 
   // ------------------------------------------------------------
-  // ADD CLASS
+  // ADD / JOIN CLASS
   // ------------------------------------------------------------
 
   Future<void> _addClass() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Add a Class',
+            style: TextStyle(
+              color: _darkBlue,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: const Text(
+            'Join an official instructor class using a class code, or create a personal class for your own schedule.',
+            style: TextStyle(color: _muted, fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'personal'),
+              child: const Text(
+                'Personal Class',
+                style: TextStyle(color: _darkBlue, fontWeight: FontWeight.w700),
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'join'),
+              style: FilledButton.styleFrom(backgroundColor: _blue),
+              child: const Text('Join with Code'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || choice == null) return;
+
+    if (choice == 'join') {
+      await _joinWithCodeDialog();
+      return;
+    }
+
     final newClass = await showDialog<ClassItem>(
       context: context,
       builder: (_) => const _AddClassDialog(),
@@ -144,13 +244,103 @@ class _ClassesPageState extends State<ClassesPage> {
 
     if (!mounted || newClass == null) return;
 
-    setState(() {
-      _classes.add(newClass);
-    });
+    try {
+      await ClassService.createPersonalClass(
+        subjectCode: newClass.code,
+        className: newClass.name,
+        instructorName: newClass.instructor,
+        location: newClass.location,
+        scheduleDay: newClass.day,
+        scheduleTime: newClass.time,
+      );
+      await _loadClasses();
+      widget.onRefresh();
+      if (mounted) {
+        _showMessage('${newClass.code} was added to your personal classes.');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showMessage(formatSupabaseError(e));
+      }
+    }
+  }
 
-    _syncStudentEnrollments();
-    widget.onRefresh();
-    _showMessage('${newClass.code} was added to your classes.');
+  Future<void> _joinWithCodeDialog() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Text(
+            'Join Official Class',
+            style: TextStyle(
+              color: _darkBlue,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                labelText: 'Class Enrollment Code',
+                hintText: 'e.g. AB12CD',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'Please enter the class code.';
+                }
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel', style: TextStyle(color: _muted)),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(dialogContext, true);
+                }
+              },
+              style: FilledButton.styleFrom(backgroundColor: _blue),
+              child: const Text('Join Class'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (submitted == true && mounted) {
+      try {
+        final result = await ClassService.joinClassByCode(controller.text);
+        await _loadClasses();
+        widget.onRefresh();
+        if (mounted) {
+          final className = (result['class_name'] ?? 'class').toString();
+          _showMessage(
+            'Enrollment request sent for $className (pending instructor approval).',
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          _showMessage(formatSupabaseError(e));
+        }
+      }
+    }
+    controller.dispose();
   }
 
   // ------------------------------------------------------------
@@ -158,6 +348,11 @@ class _ClassesPageState extends State<ClassesPage> {
   // ------------------------------------------------------------
 
   Future<void> _editClass(ClassItem item) async {
+    if (item.isOfficial) {
+      _showMessage('Official instructor classes cannot be edited by students.');
+      return;
+    }
+
     final updatedClass = await showDialog<ClassItem>(
       context: context,
       builder: (_) => _AddClassDialog(
@@ -165,19 +360,31 @@ class _ClassesPageState extends State<ClassesPage> {
       ),
     );
 
-    if (!mounted || updatedClass == null) return;
+    if (!mounted || updatedClass == null || item.id == null) return;
 
-    final index = _classes.indexOf(item);
-
-    if (index == -1) return;
-
-    setState(() {
-      _classes[index] = updatedClass;
-    });
-
-    _syncStudentEnrollments();
-    widget.onRefresh();
-    _showMessage('${updatedClass.code} was updated successfully.');
+    try {
+      await supabase
+          .from('student_personal_classes')
+          .update({
+            'subject_code': updatedClass.code.trim().toUpperCase(),
+            'class_name': updatedClass.name.trim(),
+            'instructor_name': updatedClass.instructor.trim(),
+            'location': updatedClass.location.trim(),
+            'schedule_day': updatedClass.day.trim(),
+            'schedule_time': updatedClass.time.trim(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', item.id!);
+      await _loadClasses();
+      widget.onRefresh();
+      if (mounted) {
+        _showMessage('${updatedClass.code} was updated successfully.');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showMessage(formatSupabaseError(e));
+      }
+    }
   }
 
   // ------------------------------------------------------------
@@ -244,13 +451,25 @@ class _ClassesPageState extends State<ClassesPage> {
 
     if (!mounted || confirmed != true) return;
 
-    setState(() {
-      _classes.remove(item);
-    });
+    if (item.isOfficial) {
+      _showMessage('Official instructor classes cannot be deleted by students.');
+      return;
+    }
 
-    _syncStudentEnrollments();
-    widget.onRefresh();
-    _showMessage('${item.code} was deleted.');
+    if (item.id != null) {
+      try {
+        await ClassService.deletePersonalClass(item.id!);
+        await _loadClasses();
+        widget.onRefresh();
+        if (mounted) {
+          _showMessage('${item.code} was deleted.');
+        }
+      } catch (e) {
+        if (mounted) {
+          _showMessage(formatSupabaseError(e));
+        }
+      }
+    }
   }
 
   void _showMessage(String message) {
@@ -287,11 +506,14 @@ class _ClassesPageState extends State<ClassesPage> {
     final filtered = _filteredClasses;
 
     return Container(
-      color: _background,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: ResponsiveContainer(
+        maxWidth: 1024,
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
           const SizedBox(height: 22),
 
           Padding(
@@ -313,34 +535,113 @@ class _ClassesPageState extends State<ClassesPage> {
             child: _buildClassCount(filtered.length),
           ),
 
+          if (_pendingEnrollments.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warningLight,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.warningBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pending Enrollment Requests (${_pendingEnrollments.length})',
+                      style: const TextStyle(
+                        color: AppColors.warningDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ..._pendingEnrollments.map((p) {
+                      final cls = p['classes'] as Map<String, dynamic>?;
+                      final code = (cls?['subject_code'] ?? '').toString();
+                      final name = (cls?['class_name'] ?? 'Class').toString();
+                      final section = (cls?['section'] ?? '').toString();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          '• ${code.isEmpty ? '' : '$code · '}$name${section.isEmpty ? '' : ' ($section)'} — Awaiting approval',
+                          style: const TextStyle(
+                            color: AppColors.warningDark,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 14),
 
           Expanded(
-            child: filtered.isEmpty
-                ? _buildEmptyState()
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(
-                      22,
-                      0,
-                      22,
-                      110,
-                    ),
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: 13),
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: _blue),
+                  )
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: _muted),
+                              ),
+                              const SizedBox(height: 12),
+                              FilledButton(
+                                onPressed: _loadClasses,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : filtered.isEmpty
+                        ? _buildEmptyState()
+                        : RefreshIndicator(
+                            color: _blue,
+                            onRefresh: _loadClasses,
+                            child: ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                22,
+                                0,
+                                22,
+                                110,
+                              ),
+                              physics: const AlwaysScrollableScrollPhysics(
+                                parent: BouncingScrollPhysics(),
+                              ),
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 13),
+                              itemBuilder: (context, index) {
+                                final item = filtered[index];
 
-                      return ClassListCard(
-                        item: item,
-                        onEdit: () => _editClass(item),
-                        onDelete: () => _deleteClass(item),
-                      );
-                    },
-                  ),
+                                return ClassListCard(
+                                  item: item,
+                                  onEdit: () => _editClass(item),
+                                  onDelete: () => _deleteClass(item),
+                                );
+                              },
+                            ),
+                          ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -353,6 +654,7 @@ class _ClassesPageState extends State<ClassesPage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -389,34 +691,30 @@ class _ClassesPageState extends State<ClassesPage> {
             ),
           ),
           const SizedBox(width: 12),
-          _buildAddButton(),
+          _buildJoinClassButton(),
         ],
       ),
     );
   }
 
-  Widget _buildAddButton() {
-    return Tooltip(
-      message: 'Add a class',
-      child: Material(
-        color: _blue,
-        borderRadius: BorderRadius.circular(16),
-        elevation: 3,
-        shadowColor: _blue.withValues(alpha: 0.22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _addClass,
-          child: const SizedBox(
-            width: 50,
-            height: 50,
-            child: Center(
-              child: Icon(
-                LucideIcons.plus,
-                color: Colors.white,
-                size: 23,
-              ),
-            ),
-          ),
+  Widget _buildJoinClassButton() {
+    return FilledButton.icon(
+      onPressed: _joinWithCodeDialog,
+      icon: const Icon(LucideIcons.plus, size: 16),
+      label: const Text(
+        'Join Class',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      style: FilledButton.styleFrom(
+        backgroundColor: _blue,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
     );
@@ -664,8 +962,8 @@ class _ClassesPageState extends State<ClassesPage> {
                 height: 1.5,
               ),
             ),
-            const SizedBox(height: 18),
-            if (_filter != 'All' || _search.isNotEmpty)
+            if (_filter != 'All' || _search.isNotEmpty) ...[
+              const SizedBox(height: 18),
               TextButton.icon(
                 onPressed: _clearFilters,
                 icon: const Icon(
@@ -679,17 +977,8 @@ class _ClassesPageState extends State<ClassesPage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-              )
-            else
-              FilledButton.icon(
-                onPressed: _addClass,
-                icon: const Icon(LucideIcons.plus, size: 17),
-                label: const Text('Add a class'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _blue,
-                  foregroundColor: Colors.white,
-                ),
               ),
+            ],
           ],
         ),
       ),
@@ -847,7 +1136,7 @@ class ClassListCard extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '${item.day} · ${item.time}',
+                              item.scheduleSummary,
                               style: const TextStyle(
                                 color: _muted,
                                 fontSize: 10,
@@ -1028,23 +1317,12 @@ class _AddClassDialogState extends State<_AddClassDialog> {
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
   final _instructorController = TextEditingController();
-  final _locationController = TextEditingController();
-  final _timeController = TextEditingController();
   final _sectionController = TextEditingController();
 
-  String _selectedDay = 'Monday';
+  late List<ClassMeetingSchedule> _schedules;
+  String? _scheduleError;
 
   bool get _isEditing => widget.initialClass != null;
-
-  static const List<String> _days = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ];
 
   @override
   void initState() {
@@ -1056,24 +1334,30 @@ class _AddClassDialogState extends State<_AddClassDialog> {
       _codeController.text = existingClass.code;
       _nameController.text = existingClass.name;
       _instructorController.text =
-          existingClass.instructor == 'Not specified'
+          existingClass.instructor == 'Not specified' ||
+                  existingClass.instructor == 'Personal Class'
               ? ''
               : existingClass.instructor;
-      _locationController.text =
-          existingClass.location == 'Not specified'
-              ? ''
-              : existingClass.location;
-      _timeController.text =
-          existingClass.time == 'Time not specified'
-              ? ''
-              : existingClass.time;
       _sectionController.text = existingClass.section;
 
-      _selectedDay = _days.firstWhere(
-        (day) => day.toLowerCase() ==
-            existingClass.day.trim().toLowerCase(),
-        orElse: () => 'Monday',
-      );
+      final parsed = existingClass.effectiveSchedules;
+      _schedules = parsed.isNotEmpty
+          ? List<ClassMeetingSchedule>.from(parsed)
+          : const [
+              ClassMeetingSchedule(
+                dayOfWeek: 'Monday',
+                startMinutes: 8 * 60,
+                endMinutes: 10 * 60,
+              ),
+            ];
+    } else {
+      _schedules = const [
+        ClassMeetingSchedule(
+          dayOfWeek: 'Monday',
+          startMinutes: 8 * 60,
+          endMinutes: 10 * 60,
+        ),
+      ];
     }
   }
 
@@ -1082,8 +1366,6 @@ class _AddClassDialogState extends State<_AddClassDialog> {
     _codeController.dispose();
     _nameController.dispose();
     _instructorController.dispose();
-    _locationController.dispose();
-    _timeController.dispose();
     _sectionController.dispose();
     super.dispose();
   }
@@ -1101,21 +1383,27 @@ class _AddClassDialogState extends State<_AddClassDialog> {
   // ------------------------------------------------------------
 
   void _saveClass() {
-    if (!_formKey.currentState!.validate()) return;
+    final formValid = _formKey.currentState?.validate() ?? false;
+    final schedErr = ClassMeetingSchedule.validateSchedules(
+      _schedules,
+      requireAtLeastOne: true,
+    );
+    setState(() => _scheduleError = schedErr);
+    if (!formValid || schedErr != null) return;
 
+    final sorted = ClassMeetingSchedule.sortSchedules(_schedules);
+    final roomSummary = ClassMeetingSchedule.encodeRoomSummary(sorted);
     final updatedClass = ClassItem(
+      id: widget.initialClass?.id,
       code: _codeController.text.trim().toUpperCase(),
       name: _nameController.text.trim(),
       instructor: _instructorController.text.trim().isEmpty
           ? 'Not specified'
           : _instructorController.text.trim(),
-      location: _locationController.text.trim().isEmpty
-          ? 'Not specified'
-          : _locationController.text.trim(),
-      day: _selectedDay,
-      time: _timeController.text.trim().isEmpty
-          ? 'Time not specified'
-          : _timeController.text.trim(),
+      location: roomSummary.isEmpty ? 'Not specified' : roomSummary,
+      day: ClassMeetingSchedule.encodeScheduleDay(sorted),
+      time: ClassMeetingSchedule.encodeScheduleTime(sorted),
+      schedules: sorted,
       section: _sectionController.text.trim().isEmpty
           ? 'Section A'
           : _sectionController.text.trim(),
@@ -1131,224 +1419,162 @@ class _AddClassDialogState extends State<_AddClassDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
+    final screenSize = MediaQuery.sizeOf(context);
+    return Dialog(
+      backgroundColor: AppColors.surface,
       surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: AppColors.border),
       ),
-      titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
-      contentPadding: const EdgeInsets.fromLTRB(22, 8, 22, 12),
-
-      title: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: Icon(
-              _isEditing
-                  ? Icons.edit_outlined
-                  : LucideIcons.bookPlus,
-              color: _blue,
-              size: 21,
-            ),
-          ),
-
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _isEditing ? 'Edit Class' : 'Add a Class',
-                  style: const TextStyle(
-                    color: _darkBlue,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 480,
+          maxHeight: screenSize.height * 0.88,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      _isEditing ? Icons.edit_outlined : LucideIcons.bookPlus,
+                      color: _blue,
+                      size: 20,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  _isEditing
-                      ? 'Update your subject information'
-                      : 'Enter your subject information',
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _field(
-                  controller: _codeController,
-                  label: 'Course code',
-                  hint: 'e.g. CS 101',
-                  icon: LucideIcons.hash,
-                  validator: _requiredValidator,
-                ),
-
-                const SizedBox(height: 13),
-
-                _field(
-                  controller: _nameController,
-                  label: 'Class name',
-                  hint: 'e.g. Introduction to Programming',
-                  icon: LucideIcons.bookOpen,
-                  validator: _requiredValidator,
-                ),
-
-                const SizedBox(height: 13),
-
-                _field(
-                  controller: _sectionController,
-                  label: 'Section',
-                  hint: 'e.g. Section A or BSCS 3A',
-                  icon: LucideIcons.users,
-                  validator: _requiredValidator,
-                ),
-
-                const SizedBox(height: 13),
-
-                _field(
-                  controller: _instructorController,
-                  label: 'Instructor',
-                  hint: 'e.g. Prof. Santos',
-                  icon: LucideIcons.userRound,
-                ),
-
-                const SizedBox(height: 13),
-
-                _field(
-                  controller: _locationController,
-                  label: 'Room / Location',
-                  hint: 'e.g. Room 12',
-                  icon: LucideIcons.mapPin,
-                ),
-
-                const SizedBox(height: 13),
-
-                DropdownButtonFormField<String>(
-                  value: _selectedDay,
-                  decoration: _decoration(
-                    label: 'Class day',
-                    icon: LucideIcons.calendarDays,
-                  ),
-                  items: _days.map((day) {
-                    return DropdownMenuItem(
-                      value: day,
-                      child: Text(day),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value == null) return;
-
-                    setState(() {
-                      _selectedDay = value;
-                    });
-                  },
-                ),
-
-                const SizedBox(height: 13),
-
-                _field(
-                  controller: _timeController,
-                  label: 'Class time',
-                  hint: 'e.g. 9:00 AM - 10:30 AM',
-                  icon: LucideIcons.clock,
-                ),
-
-                const SizedBox(height: 14),
-
-                Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceSoft,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        LucideIcons.info,
-                        color: _blue,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isEditing ? 'Edit Class' : 'Add a Class',
+                          style: const TextStyle(
+                            color: _darkBlue,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
                           _isEditing
-                              ? 'Your changes will update this class in the current app session.'
-                              : 'This class will be added to this screen using temporary app data.',
+                              ? 'Update subject details and weekly meetings'
+                              : 'Enter subject details and weekly meetings',
                           style: const TextStyle(
                             color: _muted,
                             fontSize: 11,
-                            height: 1.4,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(LucideIcons.x, size: 18, color: _muted),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.border),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _field(
+                        controller: _codeController,
+                        label: 'Course code',
+                        hint: 'e.g. CS 101',
+                        icon: LucideIcons.hash,
+                        validator: _requiredValidator,
+                      ),
+                      const SizedBox(height: 12),
+                      _field(
+                        controller: _nameController,
+                        label: 'Class name',
+                        hint: 'e.g. Introduction to Programming',
+                        icon: LucideIcons.bookOpen,
+                        validator: _requiredValidator,
+                      ),
+                      const SizedBox(height: 12),
+                      _field(
+                        controller: _sectionController,
+                        label: 'Section',
+                        hint: 'e.g. Section A or BSCS 3A',
+                        icon: LucideIcons.users,
+                        validator: _requiredValidator,
+                      ),
+                      const SizedBox(height: 12),
+                      _field(
+                        controller: _instructorController,
+                        label: 'Instructor',
+                        hint: 'e.g. Prof. Santos',
+                        icon: LucideIcons.userRound,
+                      ),
+                      const SizedBox(height: 16),
+                      const Divider(height: 1, color: AppColors.border),
+                      const SizedBox(height: 14),
+                      ClassScheduleEditor(
+                        schedules: _schedules,
+                        errorText: _scheduleError,
+                        onChanged: (updated) {
+                          setState(() {
+                            _schedules = updated;
+                            _scheduleError =
+                                ClassMeetingSchedule.validateSchedules(
+                              updated,
+                              requireAtLeastOne: true,
+                            );
+                          });
+                        },
                       ),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+            const Divider(height: 1, color: AppColors.border),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: _saveClass,
+                    icon: Icon(
+                      _isEditing ? Icons.save_outlined : LucideIcons.plus,
+                      size: 16,
+                    ),
+                    label: Text(_isEditing ? 'Save Changes' : 'Add Class'),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-
-      actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(
-              color: _muted,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-
-        FilledButton.icon(
-          onPressed: _saveClass,
-          icon: Icon(
-            _isEditing ? Icons.save_outlined : LucideIcons.plus,
-            size: 16,
-          ),
-          label: Text(
-            _isEditing ? 'Save Changes' : 'Add Class',
-          ),
-          style: FilledButton.styleFrom(
-            backgroundColor: _blue,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 17,
-              vertical: 12,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(11),
-            ),
-          ),
-        ),
-      ],
     );
   }
 

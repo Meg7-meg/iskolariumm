@@ -1,10 +1,19 @@
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../services/academic_service.dart';
+import '../services/supabase_client_provider.dart';
+import 'app_colors.dart';
+import 'design_system.dart';
 
-class StudentScoresDisplay extends StatelessWidget {
+class StudentScoresDisplay extends StatefulWidget {
   const StudentScoresDisplay({super.key});
 
+  @override
+  State<StudentScoresDisplay> createState() => _StudentScoresDisplayState();
+}
+
+class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
   static const Color primaryBlue = Color(0xFF3678D4);
   static const Color darkBlue = Color(0xFF245A9E);
   static const Color background = Color(0xFFF5F8FC);
@@ -15,48 +24,73 @@ class StudentScoresDisplay extends StatelessWidget {
   static const Color orange = Color(0xFFE99A35);
   static const Color red = Color(0xFFE05B5B);
 
-  final List<Map<String, dynamic>> subjects = const [
-    {
-      'name': 'Data Science',
-      'teacher': 'Mr. Indico',
-      'quiz': 92,
-      'activity': 95,
-      'exam': 90,
-    },
-    {
-      'name': 'Integral Calculus',
-      'teacher': 'Mrs. Consulta',
-      'quiz': 88,
-      'activity': 91,
-      'exam': 85,
-    },
-    {
-      'name': 'Discrete Mathematics',
-      'teacher': 'Dr. Alog',
-      'quiz': 90,
-      'activity': 87,
-      'exam': 89,
-    },
-    {
-      'name': 'Introduction to Programming',
-      'teacher': 'Prof. Makmak',
-      'quiz': 95,
-      'activity': 93,
-      'exam': 96,
-    },
-  ];
+  bool _isLoading = true;
+  String? _error;
+  List<ScoreRecord> _allScores = const [];
+  List<Map<String, dynamic>> subjects = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadScores();
+  }
+
+  Future<void> _loadScores() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final records = await AcademicService.getStudentScores();
+      final byClass = <String, List<ScoreRecord>>{};
+      for (final r in records) {
+        byClass.putIfAbsent(r.classId, () => []).add(r);
+      }
+
+      final grouped = <Map<String, dynamic>>[];
+      for (final entry in byClass.entries) {
+        final list = entry.value;
+        final first = list.first;
+
+        int avgFor(String cat) {
+          final items = list.where((r) => r.category == cat).toList();
+          if (items.isEmpty) return 0;
+          final avg =
+              items.fold<double>(0, (s, r) => s + r.percentage) / items.length;
+          return avg.round();
+        }
+
+        grouped.add({
+          'name': first.className.isEmpty ? first.subjectCode : first.className,
+          'teacher': first.instructorName.isEmpty
+              ? 'Instructor'
+              : first.instructorName,
+          'quiz': avgFor('quiz'),
+          'activity': avgFor('activity'),
+          'exam': avgFor('exam'),
+        });
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _allScores = records;
+        subjects = grouped;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = formatSupabaseError(e);
+      });
+    }
+  }
 
   double get averageScore {
-    final total = subjects.fold<double>(
-      0,
-      (sum, subject) =>
-          sum +
-          (subject['quiz'] as int) +
-          (subject['activity'] as int) +
-          (subject['exam'] as int),
-    );
-
-    return total / (subjects.length * 3);
+    if (_allScores.isEmpty) return 0;
+    final total = _allScores.fold<double>(0, (sum, r) => sum + r.percentage);
+    return total / _allScores.length;
   }
 
   Color scoreColor(int score) {
@@ -94,20 +128,63 @@ class StudentScoresDisplay extends StatelessWidget {
       ),
       body: SafeArea(
         top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 22),
-            _buildOverviewCard(),
-            const SizedBox(height: 25),
-            _buildSectionHeader(),
-            const SizedBox(height: 14),
-            ...subjects.map(_buildSubjectCard),
-            const SizedBox(height: 20),
-            _buildInformationNote(),
-          ],
-        ),
+        child: ResponsiveContainer(
+          maxWidth: 920,
+          padding: EdgeInsets.zero,
+          child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: primaryBlue),
+              )
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(_error!, textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: _loadScores,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : RefreshIndicator(
+                    color: primaryBlue,
+                    onRefresh: _loadScores,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+                      children: [
+                        _buildHeader(),
+                        const SizedBox(height: 22),
+                        _buildOverviewCard(),
+                        const SizedBox(height: 25),
+                        _buildSectionHeader(),
+                        const SizedBox(height: 14),
+                        if (subjects.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(22),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: border),
+                            ),
+                            child: const Text(
+                              'No scores recorded yet. Scores submitted by your instructors will appear here.',
+                              style: TextStyle(color: muted, fontSize: 13),
+                            ),
+                          )
+                        else
+                          ...subjects.map(_buildSubjectCard),
+                        const SizedBox(height: 20),
+                        _buildInformationNote(),
+                      ],
+                    ),
+                  ),
+                ),
       ),
     );
   }
@@ -230,7 +307,7 @@ class StudentScoresDisplay extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            '${subjects.length} subjects • ${subjects.length * 3} recorded scores',
+            '${subjects.length} subjects • ${_allScores.length} recorded scores',
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 12,

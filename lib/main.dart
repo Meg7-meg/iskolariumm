@@ -9,9 +9,16 @@ import 'package:iskolarium/screens/student/student_dashboard.dart';
 
 import 'screens/auth/welcome_screen.dart';
 import 'screens/student/student_attendance_screen.dart';
+import 'services/academic_service.dart';
+import 'services/auth_service.dart';
+import 'services/class_service.dart';
+import 'services/organizer_service.dart';
+import 'services/supabase_client_provider.dart';
 import 'src/student_scores_display.dart';
 import 'src/announcement_store.dart';
 import 'src/app_colors.dart';
+import 'src/design_system.dart';
+import 'widgets/class_schedule_editor.dart';
 
 part 'src/models_and_data.dart';
 part 'src/navigation_shell.dart';
@@ -29,7 +36,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
-    url: 'https://rinwanymoylvoxqdhvu.supabase.co',
+    url: 'https://rinwanyymoylvoxqdhvu.supabase.co',
     publishableKey: 'sb_publishable_s0zqDYoqErLUEQVQFQvBVg_myhq7-Sn',
   );
 
@@ -40,6 +47,13 @@ Future<void> main() async {
 // ISKOLARIUM DESIGN SYSTEM
 // Legacy names are retained for compatibility with existing
 // part files. They now point to the shared AppColors palette.
+// ------------------------------------------------------------
+
+// ------------------------------------------------------------
+// LEGACY COLOR ALIASES
+// These redirect to AppColors to avoid breaking existing
+// part files that still reference old constant names.
+// Migrate screens to use AppColors directly over time.
 // ------------------------------------------------------------
 
 const Color primaryBlue = AppColors.primary;
@@ -55,8 +69,9 @@ const Color borderColor = AppColors.border;
 const Color canvasColor = AppColors.surface;
 const Color softGray = AppColors.surfaceSoft;
 const Color darkPill = AppColors.primary;
+const Color navy = AppColors.navy;
 
-// Semantic colors for use throughout the app.
+// Semantic color aliases.
 const Color dangerColor = AppColors.danger;
 const Color dangerLight = AppColors.dangerLight;
 
@@ -79,6 +94,25 @@ const Color studyLight = AppColors.studyLight;
 class IskolariumApp extends StatefulWidget {
   const IskolariumApp({super.key});
 
+  static void navigateToWelcome(BuildContext context) {
+    TaskStore.items.clear();
+    NoticeStore.items.clear();
+    AnnouncementStore.items.clear();
+    StudentEnrollmentStore.items.clear();
+
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const _AuthGate(
+          isDarkMode: false,
+          onToggleTheme: _noopThemeToggle,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  static void _noopThemeToggle() {}
+
   @override
   State<IskolariumApp> createState() => _IskolariumAppState();
 }
@@ -100,13 +134,9 @@ class _IskolariumAppState extends State<IskolariumApp> {
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
       themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: WelcomeScreen(
-        studentDestinationBuilder: (context) => IskolariumShell(
-          isDarkMode: false,
-          onToggleTheme: () {},
-        ),
-        instructorDestinationBuilder: (context) =>
-            const InstructorDashboard(),
+      home: _AuthGate(
+        isDarkMode: isDarkMode,
+        onToggleTheme: toggleTheme,
       ),
     );
   }
@@ -141,139 +171,59 @@ class _IskolariumAppState extends State<IskolariumApp> {
         foregroundColor: AppColors.textPrimary,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(
-          color: AppColors.textPrimary,
-        ),
+        shadowColor: Colors.transparent,
+        iconTheme: IconThemeData(color: AppColors.textPrimary, size: 20),
         titleTextStyle: TextStyle(
           color: AppColors.textPrimary,
-          fontSize: 18,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
-          fontFamily: 'Roboto',
+          letterSpacing: -0.2,
         ),
       ),
 
       textTheme: const TextTheme(
-        displayLarge: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
-        ),
-        displayMedium: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
-        displaySmall: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
-        headlineLarge: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
-        ),
-        headlineMedium: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
-        headlineSmall: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        titleLarge: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
-        titleMedium: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        titleSmall: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        bodyLarge: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w400,
-          color: AppColors.textPrimary,
-        ),
-        bodyMedium: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w400,
-          color: AppColors.textPrimary,
-        ),
-        bodySmall: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w400,
-          color: AppColors.textSecondary,
-        ),
-        labelLarge: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        labelMedium: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w500,
-          color: AppColors.textSecondary,
-        ),
-        labelSmall: TextStyle(
-          fontFamily: 'Roboto',
-          fontWeight: FontWeight.w500,
-          color: AppColors.textSecondary,
-        ),
+        displayLarge: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+        displayMedium: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+        displaySmall: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+        headlineLarge: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+        headlineMedium: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary, fontSize: 22),
+        headlineSmall: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 18),
+        titleLarge: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 15),
+        titleMedium: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 14),
+        titleSmall: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 13),
+        bodyLarge: TextStyle(fontWeight: FontWeight.w400, color: AppColors.textPrimary, fontSize: 15),
+        bodyMedium: TextStyle(fontWeight: FontWeight.w400, color: AppColors.textPrimary, fontSize: 13),
+        bodySmall: TextStyle(fontWeight: FontWeight.w400, color: AppColors.textSecondary, fontSize: 12),
+        labelLarge: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 13),
+        labelMedium: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary, fontSize: 11),
+        labelSmall: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary, fontSize: 11),
       ),
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surfaceSoft,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
-        hintStyle: const TextStyle(
-          color: AppColors.textMuted,
-          fontSize: 13,
-        ),
-        labelStyle: const TextStyle(
-          color: AppColors.textSecondary,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.border,
-          ),
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.primary,
-            width: 1.5,
-          ),
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.danger,
-            width: 1.3,
-          ),
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppColors.danger, width: 1.3),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.danger,
-            width: 1.5,
-          ),
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
         ),
       ),
 
@@ -282,10 +232,8 @@ class _IskolariumAppState extends State<IskolariumApp> {
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(
-            color: AppColors.border,
-          ),
+          borderRadius: BorderRadius.circular(8),
+          side: const BorderSide(color: AppColors.border),
         ),
         margin: EdgeInsets.zero,
       ),
@@ -296,6 +244,17 @@ class _IskolariumAppState extends State<IskolariumApp> {
         space: 1,
       ),
 
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+      ),
+
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -303,55 +262,33 @@ class _IskolariumAppState extends State<IskolariumApp> {
           disabledBackgroundColor: AppColors.disabled,
           disabledForegroundColor: Colors.white,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 14,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(13),
-          ),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          side: const BorderSide(
-            color: AppColors.border,
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 13,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(13),
-          ),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
+          foregroundColor: AppColors.textPrimary,
+          side: const BorderSide(color: AppColors.border),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.primary,
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
 
-      floatingActionButtonTheme:
-          const FloatingActionButtonThemeData(
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        elevation: 5,
+        elevation: 2,
         shape: CircleBorder(),
       ),
 
@@ -363,21 +300,17 @@ class _IskolariumAppState extends State<IskolariumApp> {
           fontWeight: FontWeight.w500,
         ),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(13),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
 
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.surface,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         titleTextStyle: const TextStyle(
           color: AppColors.textPrimary,
-          fontSize: 18,
-          fontWeight: FontWeight.w800,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
         ),
         contentTextStyle: const TextStyle(
           color: AppColors.textSecondary,
@@ -393,30 +326,20 @@ class _IskolariumAppState extends State<IskolariumApp> {
 
       checkboxTheme: CheckboxThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return AppColors.primary;
-          }
+          if (states.contains(WidgetState.selected)) return AppColors.primary;
           return Colors.transparent;
         }),
-        side: const BorderSide(
-          color: AppColors.textMuted,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(5),
-        ),
+        side: const BorderSide(color: AppColors.textSecondary),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
 
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return Colors.white;
-          }
+          if (states.contains(WidgetState.selected)) return Colors.white;
           return AppColors.textMuted;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return AppColors.primary;
-          }
+          if (states.contains(WidgetState.selected)) return AppColors.primary;
           return AppColors.border;
         }),
       ),
@@ -495,4 +418,82 @@ class _IskolariumAppState extends State<IskolariumApp> {
   }
 }
 
-// ------------------------------------------------------------
+class _AuthGate extends StatefulWidget {
+  final bool isDarkMode;
+  final VoidCallback onToggleTheme;
+
+  const _AuthGate({
+    required this.isDarkMode,
+    required this.onToggleTheme,
+  });
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  bool _checkingSession = true;
+  UserProfile? _restoredProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      if (AuthService.currentSession != null) {
+        final profile = await AuthService.getCurrentProfile();
+        if (profile == null) {
+          await AuthService.signOut();
+        } else if (mounted) {
+          setState(() {
+            _restoredProfile = profile;
+            _checkingSession = false;
+          });
+          return;
+        }
+      }
+    } catch (_) {
+      // Fall back to WelcomeScreen if session restoration fails.
+    }
+
+    if (mounted) {
+      setState(() {
+        _restoredProfile = null;
+        _checkingSession = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checkingSession) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    if (_restoredProfile != null) {
+      if (_restoredProfile!.isInstructor) {
+        return const InstructorDashboard();
+      }
+      return IskolariumShell(
+        isDarkMode: widget.isDarkMode,
+        onToggleTheme: widget.onToggleTheme,
+      );
+    }
+
+    return WelcomeScreen(
+      studentDestinationBuilder: (context) => IskolariumShell(
+        isDarkMode: widget.isDarkMode,
+        onToggleTheme: widget.onToggleTheme,
+      ),
+      instructorDestinationBuilder: (context) => const InstructorDashboard(),
+    );
+  }
+}

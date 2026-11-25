@@ -1,119 +1,329 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../services/academic_service.dart';
+import '../../services/supabase_client_provider.dart';
 import '../../src/app_colors.dart';
-import 'instructor_dashboard.dart';
+import '../../src/design_system.dart';
 
 // ============================================================
 // INSTRUCTOR REVIEW ATTENDANCE SCREEN
+// Swiss Design + Modern Minimalist
 // ============================================================
 
 class InstructorReviewAttendanceScreen extends StatelessWidget {
   final Map<String, String> classItem;
   final List<Map<String, dynamic>> students;
   final DateTime selectedDate;
+  final String? scheduleId;
+  final String? meetingKey;
+  final String? meetingLabel;
 
   const InstructorReviewAttendanceScreen({
     super.key,
     required this.classItem,
     required this.students,
     required this.selectedDate,
+    this.scheduleId,
+    this.meetingKey,
+    this.meetingLabel,
   });
 
   // ============================================================
-  // DESIGN TOKENS
-  // ============================================================
-
-  static const Color _navy = AppColors.textPrimary;
-  static const Color _muted = AppColors.textSecondary;
-  static const Color _border = AppColors.border;
-  static const Color _background = AppColors.background;
-
-  // ============================================================
-  // ATTENDANCE COUNTS
+  // COMPUTED COUNTS
   // ============================================================
 
   int get presentCount =>
-      students.where((student) => student['status'] == 'Present').length;
+      students.where((s) => s['status'] == 'Present').length;
 
   int get absentCount =>
-      students.where((student) => student['status'] == 'Absent').length;
+      students.where((s) => s['status'] == 'Absent').length;
+
+  int get lateCount =>
+      students.where((s) => s['status'] == 'Late').length;
+
+  int get excusedCount =>
+      students.where((s) => s['status'] == 'Excused').length;
 
   int get unmarkedCount =>
-      students.where((student) => student['status'] == null).length;
+      students.where((s) => s['status'] == null).length;
+
+  bool get allMarked => unmarkedCount == 0;
 
   String get formattedDate {
     const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
     ];
-
     return '${months[selectedDate.month - 1]} '
         '${selectedDate.day}, ${selectedDate.year}';
   }
 
   // ============================================================
-  // ATTENDANCE SUMMARY CARD
+  // STATUS COLORS (monochromatic)
   // ============================================================
 
-  Widget buildSummaryCard({
+  Color _statusFg(String? status) {
+    switch (status) {
+      case 'Present':
+        return AppColors.primary;
+      case 'Absent':
+        return AppColors.textPrimary;
+      case 'Late':
+        return AppColors.textSecondary;
+      case 'Excused':
+        return AppColors.textSecondary;
+      default:
+        return AppColors.warningDark;
+    }
+  }
+
+  Color _statusBg(String? status) {
+    switch (status) {
+      case 'Present':
+        return AppColors.primaryLight;
+      case 'Absent':
+        return AppColors.surfaceSoft;
+      case 'Late':
+        return AppColors.surfaceSoft;
+      case 'Excused':
+        return AppColors.surfaceSoft;
+      default:
+        return AppColors.warningLight;
+    }
+  }
+
+  // ============================================================
+  // SAVE ATTENDANCE — Supabase (preserved exactly)
+  // ============================================================
+
+  Future<void> saveAttendance(BuildContext context) async {
+    if (unmarkedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please mark every student before saving.'),
+        ),
+      );
+      return;
+    }
+
+    final classId = classItem['id'];
+    if (classId == null || classId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Missing class ID.')),
+      );
+      return;
+    }
+
+    final statuses = <String, String>{};
+    for (final student in students) {
+      final sid = student['id']?.toString() ?? '';
+      final status = student['status']?.toString() ?? '';
+      if (sid.isNotEmpty && status.isNotEmpty) {
+        statuses[sid] = status.toLowerCase();
+      }
+    }
+
+    try {
+      await AcademicService.saveClassAttendance(
+        classId: classId,
+        date: selectedDate,
+        studentStatuses: statuses,
+        scheduleId: scheduleId,
+        meetingKey: meetingKey,
+      );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Attendance saved to Supabase.'),
+        ),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(formatSupabaseError(e))),
+      );
+    }
+  }
+
+  // ============================================================
+  // CLASS INFORMATION PANEL (flat — no gradient)
+  // ============================================================
+
+  Widget _buildClassPanel() {
+    return SurfacePanel(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(AppRadii.md),
+            ),
+            child: const Icon(
+              LucideIcons.bookOpen,
+              color: AppColors.primary,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  classItem['subject'] ?? 'Class subject',
+                  style: AppTextStyles.cardHeading,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${classItem['code'] ?? ''} · ${classItem['section'] ?? ''}',
+                  style: AppTextStyles.meta,
+                ),
+                if (meetingLabel != null && meetingLabel!.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    meetingLabel!,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (classItem['students'] != null)
+            StatusBadge(
+              label: classItem['students']!,
+              color: AppColors.primary,
+              backgroundColor: AppColors.primaryLight,
+              icon: LucideIcons.users,
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // SUMMARY TABLE (clean 2-column layout)
+  // ============================================================
+
+  Widget _buildSummaryTable() {
+    return SurfacePanel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Attendance summary', style: AppTextStyles.cardHeading),
+          const SizedBox(height: 14),
+
+          // Primary row: Present + Absent
+          Row(
+            children: [
+              _buildSummaryCell(
+                value: '$presentCount',
+                label: 'Present',
+                valueColor: AppColors.primary,
+                isLarge: true,
+              ),
+              const SizedBox(width: 1),
+              _buildSummaryCell(
+                value: '$absentCount',
+                label: 'Absent',
+                valueColor: AppColors.textPrimary,
+                isLarge: true,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 1),
+
+          // Secondary row: Late + Excused
+          Row(
+            children: [
+              _buildSummaryCell(
+                value: '$lateCount',
+                label: 'Late',
+                valueColor: AppColors.textSecondary,
+                isLarge: false,
+              ),
+              const SizedBox(width: 1),
+              _buildSummaryCell(
+                value: '$excusedCount',
+                label: 'Excused',
+                valueColor: AppColors.textSecondary,
+                isLarge: false,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: students.isNotEmpty
+                  ? (students.length - unmarkedCount) / students.length
+                  : 0.0,
+              minHeight: 4,
+              backgroundColor: AppColors.border,
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            '${students.length} students in this section',
+            style: AppTextStyles.meta,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCell({
     required String value,
     required String label,
-    required IconData icon,
-    required Color color,
-    required Color lightColor,
+    required Color valueColor,
+    required bool isLarge,
   }) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 13,
+        padding: EdgeInsets.symmetric(
+          vertical: isLarge ? 14 : 10,
+          horizontal: 14,
         ),
         decoration: BoxDecoration(
-          color: lightColor,
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: color.withValues(alpha: 0.12),
-          ),
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(AppRadii.md),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              icon,
-              color: color,
-              size: 19,
-            ),
-
-            const SizedBox(height: 12),
-
             Text(
               value,
               style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: color,
+                fontSize: isLarge ? 28 : 20,
+                fontWeight: FontWeight.w800,
+                color: valueColor,
               ),
             ),
-
-            const SizedBox(height: 3),
-
+            const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 10,
-                color: color,
-                fontWeight: FontWeight.w800,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -123,230 +333,141 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
   }
 
   // ============================================================
-  // ATTENDANCE STATUS COLORS
+  // STUDENT RECORD ROW
   // ============================================================
 
-  Color getStatusColor(String? status) {
-    switch (status) {
-      case 'Present':
-        return AppColors.success;
-
-      case 'Absent':
-        return AppColors.danger;
-
-      default:
-        return AppColors.warningDark;
-    }
-  }
-
-  Color getStatusBackground(String? status) {
-    switch (status) {
-      case 'Present':
-        return AppColors.successLight;
-
-      case 'Absent':
-        return AppColors.dangerLight;
-
-      default:
-        return AppColors.warningLight;
-    }
-  }
-
-  IconData getStatusIcon(String? status) {
-    switch (status) {
-      case 'Present':
-        return LucideIcons.checkCircle2;
-
-      case 'Absent':
-        return LucideIcons.xCircle;
-
-      default:
-        return LucideIcons.circleHelp;
-    }
-  }
-
-  // ============================================================
-  // ATTENDANCE STATUS BADGE
-  // ============================================================
-
-  Widget buildStatusBadge(String? status) {
-    final Color foregroundColor = getStatusColor(status);
-    final Color backgroundColor = getStatusBackground(status);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 7,
-      ),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            getStatusIcon(status),
-            size: 13,
-            color: foregroundColor,
-          ),
-
-          const SizedBox(width: 5),
-
-          Text(
-            status ?? 'Unmarked',
-            style: TextStyle(
-              color: foregroundColor,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // STUDENT RECORD
-  // ============================================================
-
-  Widget buildStudentRecord(
-    Map<String, dynamic> student,
-    int index,
-  ) {
+  Widget _buildStudentRecord(Map<String, dynamic> student, int index) {
     final String? status = student['status'] as String?;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(13),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _border,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.navy.withValues(alpha: 0.025),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
-          Container(
-            width: 43,
-            height: 43,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              LucideIcons.userRound,
-              color: AppColors.primary,
-              size: 20,
+          // Index number
+          SizedBox(
+            width: 24,
+            child: Text(
+              '${index + 1}',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
 
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
 
+          // Avatar
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSoft,
+              borderRadius: BorderRadius.circular(AppRadii.md),
+            ),
+            child: const Icon(
+              LucideIcons.userRound,
+              color: AppColors.textSecondary,
+              size: 16,
+            ),
+          ),
+
+          const SizedBox(width: 10),
+
+          // Name + ID
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   student['name'] as String? ?? 'Unknown student',
-                  style: const TextStyle(
-                    color: _navy,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: AppTextStyles.cardHeading,
                 ),
-
-                const SizedBox(height: 4),
-
+                const SizedBox(height: 2),
                 Text(
                   student['id'] as String? ?? '',
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: AppTextStyles.meta,
                 ),
               ],
             ),
           ),
 
-          const SizedBox(width: 7),
-
-          buildStatusBadge(status),
+          // Status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: _statusBg(status),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              status ?? 'Unmarked',
+              style: TextStyle(
+                color: _statusFg(status),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
   // ============================================================
-  // VALIDATION MESSAGE
+  // VALIDATION BANNER
   // ============================================================
 
-  Widget buildValidationMessage() {
-    final bool allMarked = unmarkedCount == 0;
-
-    final Color color =
-        allMarked ? AppColors.success : AppColors.warningDark;
-
-    final Color lightColor =
-        allMarked ? AppColors.successLight : AppColors.warningLight;
-
-    final Color borderColor =
-        allMarked ? AppColors.successBorder : AppColors.warningBorder;
-
+  Widget _buildValidationBanner() {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
       decoration: BoxDecoration(
-        color: lightColor,
-        borderRadius: BorderRadius.circular(15),
+        color: allMarked ? AppColors.primaryLight : AppColors.warningLight,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
         border: Border.all(
-          color: borderColor,
+          color: allMarked
+              ? AppColors.primary.withValues(alpha: 0.2)
+              : AppColors.warningBorder,
         ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            allMarked
-                ? LucideIcons.checkCircle2
-                : LucideIcons.alertCircle,
-            color: color,
-            size: 20,
+            allMarked ? LucideIcons.checkCircle2 : LucideIcons.alertCircle,
+            color: allMarked ? AppColors.primary : AppColors.warningDark,
+            size: 16,
           ),
-
-          const SizedBox(width: 11),
-
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   allMarked
-                      ? 'Attendance is complete'
-                      : 'Attendance is incomplete',
+                      ? 'Attendance complete'
+                      : 'Attendance incomplete',
                   style: TextStyle(
-                    color: color,
+                    color:
+                        allMarked ? AppColors.primary : AppColors.warningDark,
                     fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-
-                const SizedBox(height: 4),
-
+                const SizedBox(height: 3),
                 Text(
                   allMarked
-                      ? 'All students have been marked. Please verify the records before proceeding.'
+                      ? 'All students have been marked. Verify before confirming.'
                       : '$unmarkedCount student(s) are still unmarked. Go back and complete their attendance.',
                   style: TextStyle(
-                    color: color,
+                    color:
+                        allMarked ? AppColors.primary : AppColors.warningDark,
                     fontSize: 11,
                     height: 1.5,
                     fontWeight: FontWeight.w500,
@@ -361,543 +482,153 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
   }
 
   // ============================================================
-  // SAVE ATTENDANCE
+  // BUILD
   // ============================================================
 
-  void saveAttendance(BuildContext context) {
-    if (unmarkedCount > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please mark every student before saving.',
-          ),
-        ),
-      );
-
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-
-          icon: Container(
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(
-              LucideIcons.database,
-              color: AppColors.primary,
-              size: 29,
-            ),
-          ),
-
-          title: const Text(
-            'Database connection pending',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 17,
-              color: _navy,
-            ),
-          ),
-
-          content: const Text(
-            'Your attendance entries have been reviewed, but permanent saving to Supabase has not yet been connected to this screen.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _muted,
-              fontSize: 13,
-              height: 1.6,
-            ),
-          ),
-
-          actionsPadding: const EdgeInsets.fromLTRB(
-            20,
-            0,
-            20,
-            20,
-          ),
-
-          actions: [
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                ),
-                child: const Text(
-                  'Got it',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // CLASS INFORMATION CARD
-  // ============================================================
-
-  Widget buildClassInformation() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: AppColors.primaryGradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.15),
-            blurRadius: 17,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  LucideIcons.bookOpen,
-                  color: Colors.white,
-                  size: 19,
-                ),
-              ),
-
-              const SizedBox(width: 11),
-
-              const Expanded(
-                child: Text(
-                  'CLASS INFORMATION',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.3,
-                  ),
-                ),
-              ),
-
-              const Icon(
-                LucideIcons.clipboardCheck,
-                color: Colors.white70,
-                size: 20,
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          Text(
-            classItem['subject'] ?? 'Class subject',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            '${classItem['code'] ?? ''} · '
-            '${classItem['section'] ?? ''}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          if (classItem['students'] != null) ...[
-            const SizedBox(height: 13),
-
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 11,
-                vertical: 8,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 32),
+          children: [
+            // Page header
+            ResponsiveContainer(
+              maxWidth: 920,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    LucideIcons.users,
-                    color: Colors.white,
-                    size: 14,
+                  AcademicPageHeader(
+                    eyebrow: 'Instructor · Attendance',
+                    title: 'Review Attendance',
+                    subtitle: '$formattedDate · Review before confirmation',
+                    onBack: () => Navigator.pop(context),
                   ),
 
-                  const SizedBox(width: 7),
+                  // CLASS PANEL
+                  _buildClassPanel(),
+
+                  const SizedBox(height: 20),
+
+                  // ATTENDANCE SUMMARY TABLE
+                  _buildSummaryTable(),
+
+                  const SizedBox(height: 24),
+
+                  // STUDENT RECORDS HEADER
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Student records', style: AppTextStyles.sectionHeading),
+                      StatusBadge(
+                        label: '${students.length} students',
+                        color: AppColors.primary,
+                        backgroundColor: AppColors.primaryLight,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 4),
 
                   Text(
-                    classItem['students']!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                    'Review each student and their recorded attendance status.',
+                    style: AppTextStyles.bodySmall,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // STUDENT LIST
+                  ...List.generate(
+                    students.length,
+                    (i) => _buildStudentRecord(students[i], i),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // VALIDATION BANNER
+                  _buildValidationBanner(),
+
+                  const SizedBox(height: 16),
+
+                  // ACTION BUTTONS
+                  Row(
+                    children: [
+                      // Back to edit
+                      Expanded(
+                        child: SizedBox(
+                          height: 50,
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(LucideIcons.pencil, size: 15),
+                            label: const Text(
+                              'Back to edit',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.textPrimary,
+                              backgroundColor: AppColors.surface,
+                              side: const BorderSide(color: AppColors.border),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AppRadii.lg),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 10),
+
+                      // Confirm save
+                      Expanded(
+                        child: SizedBox(
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            onPressed: allMarked
+                                ? () => saveAttendance(context)
+                                : null,
+                            icon: const Icon(LucideIcons.save, size: 15),
+                            label: const Text(
+                              'Confirm',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.navy,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: AppColors.surfaceSoft,
+                              disabledForegroundColor: AppColors.textSecondary,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AppRadii.lg),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Center(
+                    child: Text(
+                      'Please verify all entries before confirming.',
+                      style: AppTextStyles.meta,
                     ),
                   ),
                 ],
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // BUILD SCREEN
-  // ============================================================
-
-  @override
-  Widget build(BuildContext context) {
-    final bool allMarked = unmarkedCount == 0;
-
-    return Scaffold(
-      backgroundColor: _background,
-
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-          children: [
-            // PAGE LABEL
-            const Text(
-              'ISKOLARIUM · INSTRUCTOR',
-              style: TextStyle(
-                color: _muted,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.3,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // PAGE HEADER
-            Row(
-              children: [
-                Material(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(13),
-                  child: InkWell(
-                    onTap: () => Navigator.pop(context),
-                    borderRadius: BorderRadius.circular(13),
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(13),
-                        border: Border.all(
-                          color: _border,
-                        ),
-                      ),
-                      child: const Icon(
-                        LucideIcons.chevronLeft,
-                        color: _navy,
-                        size: 23,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 12),
-
-                const Expanded(
-                  child: Text(
-                    'Review attendance',
-                    style: TextStyle(
-                      color: _navy,
-                      fontSize: 23,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 7),
-
-            Padding(
-              padding: const EdgeInsets.only(left: 54),
-              child: Text(
-                '$formattedDate · Review before confirmation',
-                style: const TextStyle(
-                  color: _muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 25),
-
-            // CLASS INFORMATION
-            buildClassInformation(),
-
-            const SizedBox(height: 24),
-
-            // ATTENDANCE SUMMARY HEADER
-            const Text(
-              'Attendance summary',
-              style: TextStyle(
-                color: _navy,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-
-            const SizedBox(height: 5),
-
-            const Text(
-              'Check the attendance distribution for this class.',
-              style: TextStyle(
-                color: _muted,
-                fontSize: 12,
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // SUMMARY CARDS
-            Row(
-              children: [
-                buildSummaryCard(
-                  value: presentCount.toString(),
-                  label: 'PRESENT',
-                  icon: LucideIcons.checkCircle2,
-                  color: AppColors.success,
-                  lightColor: AppColors.successLight,
-                ),
-
-                const SizedBox(width: 9),
-
-                buildSummaryCard(
-                  value: absentCount.toString(),
-                  label: 'ABSENT',
-                  icon: LucideIcons.xCircle,
-                  color: AppColors.danger,
-                  lightColor: AppColors.dangerLight,
-                ),
-
-                const SizedBox(width: 9),
-
-                buildSummaryCard(
-                  value: unmarkedCount.toString(),
-                  label: 'UNMARKED',
-                  icon: LucideIcons.circleHelp,
-                  color: AppColors.warningDark,
-                  lightColor: AppColors.warningLight,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 22),
-
-            // STUDENT LIST HEADER
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Student records',
-                    style: TextStyle(
-                      color: _navy,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${students.length} students',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 6),
-
-            const Text(
-              'Review each student and their recorded attendance status.',
-              style: TextStyle(
-                color: _muted,
-                fontSize: 12,
-                height: 1.5,
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // STUDENT RECORDS
-            ...List.generate(
-              students.length,
-              (index) => buildStudentRecord(
-                students[index],
-                index,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            // VALIDATION MESSAGE
-            buildValidationMessage(),
-
-            const SizedBox(height: 21),
-
-            // ACTION BUTTONS
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 53,
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(
-                        LucideIcons.pencil,
-                        size: 17,
-                      ),
-                      label: const Text(
-                        'Back to edit',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        backgroundColor: AppColors.surface,
-                        side: const BorderSide(
-                          color: AppColors.border,
-                          width: 1.3,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: SizedBox(
-                    height: 53,
-                    child: ElevatedButton.icon(
-                      onPressed: allMarked
-                          ? () => saveAttendance(context)
-                          : null,
-                      icon: const Icon(
-                        LucideIcons.save,
-                        size: 17,
-                      ),
-                      label: const Text(
-                        'Confirm',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: AppColors.disabled,
-                        disabledForegroundColor: AppColors.textSecondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 17),
-
-            // FOOTER NOTE
-            const Center(
-              child: Text(
-                'Please verify all entries before confirming.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 11,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ],
         ),
-      ),
-
-      // SHARED INSTRUCTOR GLASS NAVIGATION
-      bottomNavigationBar: InstructorGlassNavigationIsland(
-        selectedIndex: 1,
-        onItemSelected: (index) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => InstructorDashboard(
-                initialIndex: index,
-              ),
-            ),
-          );
-        },
       ),
     );
   }

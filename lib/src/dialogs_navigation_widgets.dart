@@ -53,27 +53,48 @@ class _AddItemDialogState extends State<AddItemDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     final title = titleController.text.trim();
     final subject = subjectController.text.trim();
 
-    // Existing frontend task behavior is preserved.
-    if (isTask) {
-      TaskStore.items.insert(
-        0,
-        TaskItem(
+    try {
+      if (isTask) {
+        final created = await OrganizerService.createTask(
           title: title,
           subject: subject.isEmpty ? itemType : subject,
-          due: 'Due date not set',
+          category: itemType,
           priority: 'Medium',
-        ),
+        );
+        TaskStore.items.insert(
+          0,
+          TaskItem(
+            id: created.id,
+            title: created.title,
+            subject: created.subject,
+            category: created.category,
+            due: 'Due date not set',
+            priority: created.priority,
+          ),
+        );
+      } else if (isEvent) {
+        await OrganizerService.createEvent(
+          title: title,
+          details: subject,
+          startsAt: DateTime.now(),
+        );
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onAdded();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(formatSupabaseError(e))),
       );
     }
-
-    Navigator.pop(context);
-    widget.onAdded();
   }
 
   @override
@@ -560,7 +581,7 @@ class _AnimatedOwlMascotState extends State<AnimatedOwlMascot>
         );
       },
       child: Image.asset(
-        'assets/images/owl.png',
+        'assets/images/owl_peeking.png',
         width: 100,
         height: 100,
         fit: BoxFit.contain,

@@ -1,30 +1,54 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:iskolarium/main.dart';
+import 'package:iskolarium/services/academic_service.dart';
+import 'package:iskolarium/services/auth_service.dart';
+import 'package:iskolarium/services/class_service.dart';
+import 'package:iskolarium/services/organizer_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-  await tester.pumpWidget(const IskolariumApp());
+  test('UserProfile parses role and defaults safely', () {
+    final profile = UserProfile.fromMap({
+      'id': 'u-1',
+      'full_name': 'Jane Doe',
+      'email': 'jane@example.com',
+      'role': 'Instructor',
+    });
+    expect(profile.isInstructor, isTrue);
+    expect(profile.isStudent, isFalse);
+    expect(profile.fullName, 'Jane Doe');
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('ClassService.generateCode produces 6-char uppercase code', () {
+    final code = ClassService.generateCode();
+    expect(code.length, 6);
+    expect(code, equals(code.toUpperCase()));
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('ScoreRecord computes percentage accurately', () {
+    final score = ScoreRecord(
+      id: 's-1',
+      classId: 'c-1',
+      className: 'Database Systems',
+      subjectCode: 'CS 304',
+      instructorName: 'Dr. Reyes',
+      studentId: 'u-2',
+      studentName: 'Juan',
+      assessmentName: 'Quiz 1',
+      category: 'quiz',
+      score: 18,
+      maxScore: 20,
+      createdAt: DateTime(2026, 1, 1),
+    );
+    expect(score.percentage, 90.0);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('StudentNotificationRecord tracks unread state', () {
+    final unread = StudentNotificationRecord(
+      id: 'n-1',
+      title: 'Test',
+      message: 'Body',
+      category: 'Classes',
+      createdAt: DateTime.now(),
+    );
+    expect(unread.isUnread, isTrue);
   });
 }

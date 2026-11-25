@@ -5,7 +5,7 @@ part of '../main.dart';
 // Refined Blue and White Academic Calendar
 // ------------------------------------------------------------
 
-class CalendarPage extends StatelessWidget {
+class CalendarPage extends StatefulWidget {
   final DateTime selectedDate;
   final ValueChanged<DateTime> onDateChanged;
   final VoidCallback onAdd;
@@ -16,6 +16,33 @@ class CalendarPage extends StatelessWidget {
     required this.onDateChanged,
     required this.onAdd,
   });
+
+  @override
+  State<CalendarPage> createState() => _CalendarPageState();
+}
+
+class _CalendarPageState extends State<CalendarPage> {
+  List<StudentEventRecord> _calendarEvents = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCalendarEvents();
+  }
+
+  Future<void> _loadCalendarEvents() async {
+    try {
+      final events = await OrganizerService.getEvents();
+      if (!mounted) return;
+      setState(() => _calendarEvents = events);
+    } catch (_) {
+      // Keep tasks visible even if events fail to load.
+    }
+  }
+
+  DateTime get selectedDate => widget.selectedDate;
+  ValueChanged<DateTime> get onDateChanged => widget.onDateChanged;
+  VoidCallback get onAdd => widget.onAdd;
 
   static const Color _blue = AppColors.primary;
   static const Color _darkBlue = AppColors.navy;
@@ -57,31 +84,47 @@ class CalendarPage extends StatelessWidget {
     final events = _eventsFor(selectedDate);
 
     return Container(
-      color: _background,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(22, 22, 22, 105),
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: 96),
         physics: const BouncingScrollPhysics(),
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildMonthNavigation(),
-          const SizedBox(height: 15),
-          _buildCalendarGrid(
-            firstWeekday,
-            daysInMonth,
-            weekCount,
+        child: ResponsiveContainer(
+          maxWidth: 960,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AcademicPageHeader(
+                eyebrow: 'Schedule',
+                title: 'Calendar',
+                subtitle: 'Plan classes, deadlines, and events',
+                actions: [
+                  FilledButton.icon(
+                    onPressed: onAdd,
+                    icon: const Icon(LucideIcons.plus, size: 16),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+              _buildMonthNavigation(),
+              const SizedBox(height: 14),
+              _buildCalendarGrid(
+                firstWeekday,
+                daysInMonth,
+                weekCount,
+              ),
+              const SizedBox(height: 24),
+              _buildAgendaHeader(events.length),
+              const SizedBox(height: 12),
+              _buildAgenda(context, events),
+            ],
           ),
-          const SizedBox(height: 25),
-          _buildAgendaHeader(events.length),
-          const SizedBox(height: 13),
-          _buildAgenda(context, events),
-        ],
+        ),
       ),
     );
   }
 
   // ------------------------------------------------------------
-  // HEADER
+  // HEADER (kept for compatibility)
   // ------------------------------------------------------------
 
   Widget _buildHeader() {
@@ -847,6 +890,21 @@ class CalendarPage extends StatelessWidget {
         task.title,
         task.subject,
         task.done ? 'Completed' : 'Assignment',
+      ));
+    }
+
+    for (final ev in _calendarEvents) {
+      if (!_sameDate(ev.startsAt, date)) continue;
+      final hh = ev.startsAt.hour == 0
+          ? 12
+          : (ev.startsAt.hour > 12 ? ev.startsAt.hour - 12 : ev.startsAt.hour);
+      final mm = ev.startsAt.minute.toString().padLeft(2, '0');
+      final ampm = ev.startsAt.hour >= 12 ? 'PM' : 'AM';
+      events.add((
+        '$hh:$mm $ampm',
+        ev.title,
+        ev.location.isEmpty ? 'Event' : ev.location,
+        'Event',
       ));
     }
 

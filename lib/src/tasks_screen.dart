@@ -21,6 +21,72 @@ class _TasksPageState extends State<TasksPage> {
   String filter = 'All';
   bool sortAscending = true;
   String searchQuery = '';
+  bool _isLoading = true;
+  List<ClassAssignmentRecord> _officialAssignments = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
+  }
+
+  Future<void> _loadTasks() async {
+    try {
+      final records = await OrganizerService.getTasks();
+      List<ClassAssignmentRecord> assignments = const [];
+      try {
+        assignments = await AcademicService.getStudentAssignments();
+      } catch (_) {
+        // Keep personal tasks working even if migration 003 isn't applied yet.
+      }
+      TaskStore.items
+        ..clear()
+        ..addAll(
+          records.map((r) {
+            String dueText = 'Due date not set';
+            if (r.dueAt != null) {
+              const months = [
+                'Jan',
+                'Feb',
+                'Mar',
+                'Apr',
+                'May',
+                'Jun',
+                'Jul',
+                'Aug',
+                'Sep',
+                'Oct',
+                'Nov',
+                'Dec',
+              ];
+              dueText =
+                  'Due ${months[r.dueAt!.month - 1]} ${r.dueAt!.day}, ${r.dueAt!.year}';
+            }
+            return TaskItem(
+              id: r.id,
+              title: r.title,
+              subject: r.subject.isEmpty ? 'General' : r.subject,
+              description: r.description,
+              category: r.category,
+              dueAt: r.dueAt,
+              due: dueText,
+              priority: r.priority,
+              done: r.isCompleted,
+            );
+          }),
+        );
+      if (mounted) {
+        setState(() {
+          _officialAssignments = assignments;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   static const Color _blue = AppColors.primary;
   static const Color _darkBlue = AppColors.navy;
@@ -65,13 +131,29 @@ class _TasksPageState extends State<TasksPage> {
     });
 
     return Container(
-      color: _background,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(remainingCount),
-
-          const SizedBox(height: 22),
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: ResponsiveContainer(
+        maxWidth: 960,
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: AcademicPageHeader(
+                eyebrow: 'Academic Tasks',
+                title: 'My Tasks',
+                subtitle:
+                    '$remainingCount ${remainingCount == 1 ? 'task' : 'tasks'} remaining',
+                actions: [
+                  FilledButton.icon(
+                    onPressed: _addTask,
+                    icon: const Icon(LucideIcons.plus, size: 16),
+                    label: const Text('New Task'),
+                  ),
+                ],
+              ),
+            ),
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -145,6 +227,52 @@ class _TasksPageState extends State<TasksPage> {
 
           const SizedBox(height: 14),
 
+          if (_officialAssignments.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _lightBlue,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Class Assignments (${_officialAssignments.length})',
+                      style: const TextStyle(
+                        color: _darkBlue,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ..._officialAssignments.take(3).map((a) {
+                      final dueStr = a.dueAt == null
+                          ? 'No due date'
+                          : 'Due ${a.dueAt!.month}/${a.dueAt!.day}/${a.dueAt!.year}';
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '• ${a.subjectCode}: ${a.title} ($dueStr)',
+                          style: const TextStyle(
+                            color: _darkBlue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+
           Expanded(
             child: tasks.isEmpty
                 ? _buildEmptyState()
@@ -173,11 +301,28 @@ class _TasksPageState extends State<TasksPage> {
                         },
                         child: TaskCard(
                           task: task,
-                          onChanged: (value) {
+                          onChanged: (value) async {
+                            final next = value ?? false;
                             setState(() {
-                              task.done = value ?? false;
+                              task.done = next;
                             });
-
+                            if (task.id != null) {
+                              try {
+                                await OrganizerService.toggleTaskCompleted(
+                                  task.id!,
+                                  next,
+                                );
+                              } catch (e) {
+                                if (mounted) {
+                                  setState(() => task.done = !next);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(formatSupabaseError(e)),
+                                    ),
+                                  );
+                                }
+                              }
+                            }
                             widget.onRefresh();
                           },
                           onEdit: () {
@@ -193,11 +338,12 @@ class _TasksPageState extends State<TasksPage> {
           ),
         ],
       ),
+      ),
     );
   }
 
   // ============================================================
-  // HEADER
+  // HEADER (kept for compatibility)
   // ============================================================
 
   Widget _buildHeader(int remainingCount) {
@@ -695,7 +841,7 @@ class _TasksPageState extends State<TasksPage> {
     }
   }
 
-  void _deleteTask(TaskItem task) {
+  Future<void> _deleteTask(TaskItem task) async {
     final originalIndex = TaskStore.items.indexOf(task);
 
     if (originalIndex == -1) return;
@@ -704,31 +850,34 @@ class _TasksPageState extends State<TasksPage> {
       TaskStore.items.remove(task);
     });
 
+    if (task.id != null) {
+      try {
+        await OrganizerService.deleteTask(task.id!);
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            TaskStore.items.insert(
+              originalIndex.clamp(0, TaskStore.items.length),
+              task,
+            );
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(formatSupabaseError(e))),
+          );
+          return;
+        }
+      }
+    }
+
     widget.onRefresh();
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Task deleted.'),
+      const SnackBar(
+        content: Text('Task deleted.'),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: _darkBlue,
-        action: SnackBarAction(
-          label: 'UNDO',
-          textColor: Colors.white,
-          onPressed: () {
-            setState(() {
-              final safeIndex = originalIndex.clamp(
-                0,
-                TaskStore.items.length,
-              );
-
-              TaskStore.items.insert(safeIndex, task);
-            });
-
-            widget.onRefresh();
-          },
-        ),
       ),
     );
   }
@@ -1385,7 +1534,7 @@ void showTaskDialog(
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                onPressed: () {
+                onPressed: () async {
                   final title = titleController.text.trim();
                   final subject =
                       subjectController.text.trim();
@@ -1401,42 +1550,66 @@ void showTaskDialog(
                     return;
                   }
 
-                  final due = selectedDueDate != null
-                      ? formatDate(selectedDueDate!)
+                  final dueDate = selectedDueDate ?? task?.dueAt;
+                  final due = dueDate != null
+                      ? formatDate(dueDate)
                       : existingDue.isNotEmpty
                           ? existingDue
                           : 'Due date not set';
 
-                  if (isEditing) {
-                    final index = TaskStore.items.indexOf(task!);
-
-                    if (index != -1) {
-                      TaskStore.items[index] = TaskItem(
+                  try {
+                    if (isEditing && task!.id != null) {
+                      await OrganizerService.updateTask(
+                        id: task.id!,
                         title: title,
-                        subject: subject.isEmpty
-                            ? 'General'
-                            : subject,
-                        due: due,
+                        subject: subject.isEmpty ? 'General' : subject,
+                        dueAt: dueDate,
                         priority: selectedPriority,
-                        done: task.done,
+                        isCompleted: task.done,
+                      );
+                      final index = TaskStore.items.indexOf(task);
+                      if (index != -1) {
+                        TaskStore.items[index] = TaskItem(
+                          id: task.id,
+                          title: title,
+                          subject: subject.isEmpty ? 'General' : subject,
+                          dueAt: dueDate,
+                          due: due,
+                          priority: selectedPriority,
+                          done: task.done,
+                        );
+                      }
+                    } else {
+                      final created = await OrganizerService.createTask(
+                        title: title,
+                        subject: subject.isEmpty ? 'General' : subject,
+                        dueAt: dueDate,
+                        priority: selectedPriority,
+                      );
+                      TaskStore.items.insert(
+                        0,
+                        TaskItem(
+                          id: created.id,
+                          title: created.title,
+                          subject: created.subject.isEmpty
+                              ? 'General'
+                              : created.subject,
+                          dueAt: created.dueAt,
+                          due: due,
+                          priority: created.priority,
+                        ),
                       );
                     }
-                  } else {
-                    TaskStore.items.insert(
-                      0,
-                      TaskItem(
-                        title: title,
-                        subject: subject.isEmpty
-                            ? 'General'
-                            : subject,
-                        due: due,
-                        priority: selectedPriority,
-                      ),
+
+                    if (!dialogContext.mounted) return;
+                    Navigator.pop(dialogContext);
+                    onSaved();
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(formatSupabaseError(e))),
                     );
                   }
-
-                  Navigator.pop(dialogContext);
-                  onSaved();
                 },
                 child: Text(
                   isEditing ? 'Save Changes' : 'Add Task',
