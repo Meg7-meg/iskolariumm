@@ -8,10 +8,7 @@ part of '../main.dart';
 class ClassesPage extends StatefulWidget {
   final VoidCallback onRefresh;
 
-  const ClassesPage({
-    super.key,
-    required this.onRefresh,
-  });
+  const ClassesPage({super.key, required this.onRefresh});
 
   @override
   State<ClassesPage> createState() => _ClassesPageState();
@@ -19,17 +16,14 @@ class ClassesPage extends StatefulWidget {
 
 class _ClassesPageState extends State<ClassesPage> {
   static const Color _blue = AppColors.primary;
-  static const Color _darkBlue = AppColors.navy;
+  static const Color _darkBlue = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
   static const Color _background = AppColors.background;
-  static const Color _lightBlue = AppColors.primaryLight;
   static const Color _border = AppColors.border;
 
   final List<ClassItem> _classes = [];
-  final TextEditingController _searchController =
-      TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
-  String _filter = 'All';
   String _search = '';
   bool _isLoading = true;
   String? _error;
@@ -77,8 +71,9 @@ class _ClassesPageState extends State<ClassesPage> {
             id: p.id,
             code: p.subjectCode,
             name: p.className,
-            instructor:
-                p.instructorName.isEmpty ? 'Personal Class' : p.instructorName,
+            instructor: p.instructorName.isEmpty
+                ? 'Personal Course'
+                : p.instructorName,
             location: p.location.isEmpty ? 'Personal' : p.location,
             day: p.scheduleDay.isEmpty ? 'Flexible' : p.scheduleDay,
             time: p.scheduleTime.isEmpty ? 'Flexible' : p.scheduleTime,
@@ -134,32 +129,7 @@ class _ClassesPageState extends State<ClassesPage> {
   // FILTER LOGIC
   // ------------------------------------------------------------
 
-  bool _matchesDay(ClassItem item, int weekday) {
-    if (weekday < 1 || weekday > 7) return false;
-    final list = item.effectiveSchedules;
-    if (list.isNotEmpty) {
-      return list.any((s) => s.weekday == weekday);
-    }
-
-    final normalized = item.day.trim().toLowerCase();
-    final target = ClassMeetingSchedule.daysOfWeek[weekday - 1].toLowerCase();
-    final shortTarget = target.substring(0, 3);
-
-    return normalized.contains(target) || normalized.contains(shortTarget);
-  }
-
-  bool _isScheduledThisWeek(ClassItem item) {
-    if (item.effectiveSchedules.isNotEmpty) return true;
-    final normalized = item.day.trim().toLowerCase();
-    return ClassMeetingSchedule.daysOfWeek.any((value) {
-      final lower = value.toLowerCase();
-      return normalized.contains(lower) ||
-          normalized.contains(lower.substring(0, 3));
-    });
-  }
-
   List<ClassItem> get _filteredClasses {
-    final today = DateTime.now().weekday;
     final query = _search.trim().toLowerCase();
 
     return _classes.where((item) {
@@ -176,13 +146,7 @@ class _ClassesPageState extends State<ClassesPage> {
 
       final matchesSearch = searchableText.contains(query);
 
-      final matchesFilter = switch (_filter) {
-        'Today' => _matchesDay(item, today),
-        'This week' => _isScheduledThisWeek(item),
-        _ => true,
-      };
-
-      return matchesSearch && matchesFilter;
+      return matchesSearch;
     }).toList();
   }
 
@@ -201,7 +165,7 @@ class _ClassesPageState extends State<ClassesPage> {
             borderRadius: BorderRadius.circular(20),
           ),
           title: const Text(
-            'Add a Class',
+            'Add a Course',
             style: TextStyle(
               color: _darkBlue,
               fontSize: 18,
@@ -216,14 +180,14 @@ class _ClassesPageState extends State<ClassesPage> {
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, 'personal'),
               child: const Text(
-                'Personal Class',
+                'Personal Course',
                 style: TextStyle(color: _darkBlue, fontWeight: FontWeight.w700),
               ),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, 'join'),
               style: FilledButton.styleFrom(backgroundColor: _blue),
-              child: const Text('Join with Code'),
+              child: const Text('Join with Enrollment Code'),
             ),
           ],
         );
@@ -298,7 +262,7 @@ class _ClassesPageState extends State<ClassesPage> {
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) {
-                  return 'Please enter the class code.';
+                  return 'Enter the course enrollment code.';
                 }
                 return null;
               },
@@ -355,9 +319,7 @@ class _ClassesPageState extends State<ClassesPage> {
 
     final updatedClass = await showDialog<ClassItem>(
       context: context,
-      builder: (_) => _AddClassDialog(
-        initialClass: item,
-      ),
+      builder: (_) => _AddClassDialog(initialClass: item),
     );
 
     if (!mounted || updatedClass == null || item.id == null) return;
@@ -411,11 +373,7 @@ class _ClassesPageState extends State<ClassesPage> {
           ),
           content: Text(
             'Are you sure you want to delete ${item.code} - ${item.name}? This action cannot be undone.',
-            style: const TextStyle(
-              color: _muted,
-              fontSize: 13,
-              height: 1.5,
-            ),
+            style: const TextStyle(color: _muted, fontSize: 13, height: 1.5),
           ),
           actions: [
             TextButton(
@@ -424,17 +382,14 @@ class _ClassesPageState extends State<ClassesPage> {
               },
               child: const Text(
                 'Cancel',
-                style: TextStyle(
-                  color: _muted,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600),
               ),
             ),
             FilledButton.icon(
               onPressed: () {
                 Navigator.pop(dialogContext, true);
               },
-              icon: const Icon(Icons.delete_outline, size: 17),
+              icon: const Icon(LucideIcons.trash2, size: 17),
               label: const Text('Delete'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.danger,
@@ -452,7 +407,9 @@ class _ClassesPageState extends State<ClassesPage> {
     if (!mounted || confirmed != true) return;
 
     if (item.isOfficial) {
-      _showMessage('Official instructor classes cannot be deleted by students.');
+      _showMessage(
+        'Official instructor classes cannot be deleted by students.',
+      );
       return;
     }
 
@@ -488,13 +445,9 @@ class _ClassesPageState extends State<ClassesPage> {
   // CLEAR FILTERS
   // ------------------------------------------------------------
 
-  void _clearFilters() {
+  void _clearSearch() {
     _searchController.clear();
-
-    setState(() {
-      _search = '';
-      _filter = 'All';
-    });
+    setState(() => _search = '');
   }
 
   // ------------------------------------------------------------
@@ -514,134 +467,108 @@ class _ClassesPageState extends State<ClassesPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(),
-          const SizedBox(height: 22),
+            const SizedBox(height: AppSpacing.md),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: _buildSearchBar(),
-          ),
-
-          const SizedBox(height: 14),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: _buildFilterBar(),
-          ),
-
-          const SizedBox(height: 22),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _buildClassCount(filtered.length),
-          ),
-
-          if (_pendingEnrollments.isNotEmpty) ...[
-            const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 22),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.warningLight,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.warningBorder),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Pending Enrollment Requests (${_pendingEnrollments.length})',
-                      style: const TextStyle(
-                        color: AppColors.warningDark,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    ..._pendingEnrollments.map((p) {
-                      final cls = p['classes'] as Map<String, dynamic>?;
-                      final code = (cls?['subject_code'] ?? '').toString();
-                      final name = (cls?['class_name'] ?? 'Class').toString();
-                      final section = (cls?['section'] ?? '').toString();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Text(
-                          '• ${code.isEmpty ? '' : '$code · '}$name${section.isEmpty ? '' : ' ($section)'} — Awaiting approval',
-                          style: const TextStyle(
-                            color: AppColors.warningDark,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
+              child: _buildSearchBar(),
             ),
-          ],
 
-          const SizedBox(height: 14),
+            const SizedBox(height: 22),
 
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: _blue),
-                  )
-                : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _error!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: _muted),
-                              ),
-                              const SizedBox(height: 12),
-                              FilledButton(
-                                onPressed: _loadClasses,
-                                child: const Text('Retry'),
-                              ),
-                            ],
-                          ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: _buildClassCount(filtered.length),
+            ),
+
+            if (_pendingEnrollments.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warningLight,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.warningBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pending Enrollment Requests (${_pendingEnrollments.length})',
+                        style: const TextStyle(
+                          color: AppColors.warningDark,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
                         ),
-                      )
-                    : filtered.isEmpty
-                        ? _buildEmptyState()
-                        : RefreshIndicator(
-                            color: _blue,
-                            onRefresh: _loadClasses,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(
-                                22,
-                                0,
-                                22,
-                                110,
-                              ),
-                              physics: const AlwaysScrollableScrollPhysics(
-                                parent: BouncingScrollPhysics(),
-                              ),
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 13),
-                              itemBuilder: (context, index) {
-                                final item = filtered[index];
-
-                                return ClassListCard(
-                                  item: item,
-                                  onEdit: () => _editClass(item),
-                                  onDelete: () => _deleteClass(item),
-                                );
-                              },
+                      ),
+                      const SizedBox(height: 6),
+                      ..._pendingEnrollments.map((p) {
+                        final cls = p['classes'] as Map<String, dynamic>?;
+                        final code = (cls?['subject_code'] ?? '').toString();
+                        final name = (cls?['class_name'] ?? 'Class').toString();
+                        final section = (cls?['section'] ?? '').toString();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text(
+                            '• ${code.isEmpty ? '' : '$code · '}$name${section.isEmpty ? '' : ' ($section)'} — Awaiting approval',
+                            style: const TextStyle(
+                              color: AppColors.warningDark,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-          ),
-        ],
-      ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: _blue))
+                  : _error != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        child: AsyncErrorView(
+                          message: _error!,
+                          onRetry: _loadClasses,
+                        ),
+                      ),
+                    )
+                  : filtered.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      color: _blue,
+                      onRefresh: _loadClasses,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 110),
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 13),
+                        itemBuilder: (context, index) {
+                          final item = filtered[index];
+
+                          return ClassListCard(
+                            item: item,
+                            onEdit: () => _editClass(item),
+                            onDelete: () => _deleteClass(item),
+                          );
+                        },
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -652,70 +579,30 @@ class _ClassesPageState extends State<ClassesPage> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'My Classes',
-                  style: TextStyle(
-                    color: _darkBlue,
-                    fontSize: 27,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.8,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${_classes.length} enrolled subjects',
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: _blue,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          _buildJoinClassButton(),
-        ],
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      child: AcademicPageHeader(
+        eyebrow: 'LEARNING',
+        title: 'My Courses',
+        subtitle: '${_classes.length} enrolled subjects',
+        actions: [_buildJoinClassButton()],
       ),
     );
   }
 
   Widget _buildJoinClassButton() {
     return FilledButton.icon(
-      onPressed: _joinWithCodeDialog,
+      onPressed: _addClass,
       icon: const Icon(LucideIcons.plus, size: 16),
       label: const Text(
         'Join Class',
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
       style: FilledButton.styleFrom(
         backgroundColor: _blue,
         foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: const StadiumBorder(),
       ),
     );
   }
@@ -742,11 +629,7 @@ class _ClassesPageState extends State<ClassesPage> {
       ),
       child: Row(
         children: [
-          const Icon(
-            LucideIcons.search,
-            color: _muted,
-            size: 20,
-          ),
+          const Icon(LucideIcons.search, color: _muted, size: 20),
           const SizedBox(width: 11),
           Expanded(
             child: TextField(
@@ -763,10 +646,7 @@ class _ClassesPageState extends State<ClassesPage> {
               ),
               decoration: const InputDecoration(
                 hintText: 'Search classes, subjects or instructors...',
-                hintStyle: TextStyle(
-                  color: _muted,
-                  fontSize: 12,
-                ),
+                hintStyle: TextStyle(color: _muted, fontSize: 12),
                 border: InputBorder.none,
                 isDense: true,
               ),
@@ -783,78 +663,9 @@ class _ClassesPageState extends State<ClassesPage> {
                   _search = '';
                 });
               },
-              icon: const Icon(
-                LucideIcons.x,
-                color: _muted,
-                size: 18,
-              ),
+              icon: const Icon(LucideIcons.x, color: _muted, size: 18),
             ),
         ],
-      ),
-    );
-  }
-
-  // ------------------------------------------------------------
-  // FILTERS
-  // ------------------------------------------------------------
-
-  Widget _buildFilterBar() {
-    const labels = ['All', 'Today', 'This week'];
-
-    return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceSoft,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        children: labels.map((label) {
-          final selected = _filter == label;
-
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _filter = label;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Colors.white
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(11),
-                  border: selected
-                      ? Border.all(color: _border)
-                      : null,
-                  boxShadow: selected
-                      ? [
-                          BoxShadow(
-                            color: _blue.withValues(alpha: 0.07),
-                            blurRadius: 7,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : [],
-                ),
-                child: Center(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: selected ? _blue : _muted,
-                      fontSize: 12,
-                      fontWeight: selected
-                          ? FontWeight.w800
-                          : FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
       ),
     );
   }
@@ -880,29 +691,15 @@ class _ClassesPageState extends State<ClassesPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '$count ${count == 1 ? 'Class' : 'Classes'}',
-                style: const TextStyle(
-                  color: _darkBlue,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
+                '$count ${count == 1 ? 'Course' : 'Courses'}',
+                style: AppTextStyles.cardHeading,
               ),
               const SizedBox(height: 3),
-              const Text(
-                'Your enrolled subjects',
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 10,
-                ),
-              ),
+              const Text('Your enrolled subjects', style: AppTextStyles.meta),
             ],
           ),
         ),
-        const Icon(
-          LucideIcons.graduationCap,
-          color: _blue,
-          size: 21,
-        ),
+        const Icon(LucideIcons.graduationCap, color: _blue, size: 21),
       ],
     );
   }
@@ -916,72 +713,14 @@ class _ClassesPageState extends State<ClassesPage> {
 
     final message = hasSearch
         ? 'Try another keyword or check your spelling.'
-        : _filter == 'Today'
-            ? 'You have no classes scheduled for today.'
-            : _filter == 'This week'
-                ? 'There are no classes scheduled this week.'
-                : 'Add your first class to start organizing your subjects.';
+        : 'Add your first class to start organizing your subjects.';
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 82,
-              height: 82,
-              decoration: BoxDecoration(
-                color: _lightBlue,
-                borderRadius: BorderRadius.circular(25),
-              ),
-              child: const Center(
-                child: Icon(
-                  LucideIcons.bookOpen,
-                  color: _blue,
-                  size: 36,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'No classes found',
-              style: TextStyle(
-                color: _darkBlue,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _muted,
-                fontSize: 12,
-                height: 1.5,
-              ),
-            ),
-            if (_filter != 'All' || _search.isNotEmpty) ...[
-              const SizedBox(height: 18),
-              TextButton.icon(
-                onPressed: _clearFilters,
-                icon: const Icon(
-                  LucideIcons.rotateCcw,
-                  size: 15,
-                ),
-                label: const Text('Clear filters'),
-                style: TextButton.styleFrom(
-                  foregroundColor: _blue,
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+    return EmptyStateView(
+      icon: LucideIcons.bookOpen,
+      title: 'No courses found',
+      message: message,
+      actionLabel: hasSearch ? 'Clear search' : null,
+      onAction: hasSearch ? _clearSearch : null,
     );
   }
 }
@@ -1003,19 +742,33 @@ class ClassListCard extends StatelessWidget {
   });
 
   static const Color _blue = AppColors.primary;
-  static const Color _darkBlue = AppColors.navy;
+  static const Color _darkBlue = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
   static const Color _lightBlue = AppColors.primaryLight;
   static const Color _border = AppColors.border;
 
+  ({ClassMeetingSchedule schedule, DateTime date})? _nextMeeting() {
+    final now = DateTime.now();
+    ({ClassMeetingSchedule schedule, DateTime date})? next;
+
+    for (final schedule in item.effectiveSchedules) {
+      final meeting = schedule.nextOccurrenceAfter(now);
+
+      if (next == null || meeting.isBefore(next.date)) {
+        next = (schedule: schedule, date: meeting);
+      }
+    }
+
+    return next;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final progress = item.progress.clamp(0.0, 1.0);
-    final progressColor = progress >= 0.75
-        ? AppColors.success
-        : progress >= 0.40
-            ? AppColors.warning
-            : AppColors.info;
+    final nextMeeting = _nextMeeting();
+    final nextMeetingText = nextMeeting == null
+        ? 'Schedule unavailable'
+        : '${MaterialLocalizations.of(context).formatShortDate(nextMeeting.date)}, '
+              '${nextMeeting.schedule.formattedTimeRange}';
 
     return Material(
       color: Colors.transparent,
@@ -1025,9 +778,7 @@ class ClassListCard extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ClassDetailScreen(
-                classItem: item,
-              ),
+              builder: (_) => ClassDetailScreen(classItem: item),
             ),
           );
         },
@@ -1047,25 +798,7 @@ class ClassListCard extends StatelessWidget {
           child: IntrinsicHeight(
             child: Row(
               children: [
-                Container(
-                  width: 4,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFF1A56DB),
-                        AppColors.primaryLight,
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(18),
-                      bottomLeft: Radius.circular(18),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 12),
+              const SizedBox(width: 14),
 
                 Center(
                   child: Container(
@@ -1076,11 +809,7 @@ class ClassListCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: const Center(
-                      child: Icon(
-                        LucideIcons.bookOpen,
-                        color: _blue,
-                        size: 22,
-                      ),
+                      child: Icon(LucideIcons.bookOpen, color: _blue, size: 22),
                     ),
                   ),
                 ),
@@ -1096,8 +825,7 @@ class ClassListCard extends StatelessWidget {
                         Wrap(
                           spacing: 8,
                           runSpacing: 5,
-                          crossAxisAlignment:
-                              WrapCrossAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -1135,14 +863,6 @@ class ClassListCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            Text(
-                              item.scheduleSummary,
-                              style: const TextStyle(
-                                color: _muted,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
                           ],
                         ),
 
@@ -1165,64 +885,37 @@ class ClassListCard extends StatelessWidget {
                         Row(
                           children: [
                             const Icon(
-                              LucideIcons.userRound,
+                              LucideIcons.calendar,
                               size: 13,
                               color: _muted,
                             ),
                             const SizedBox(width: 5),
                             Expanded(
-                              child: Text(
-                                '${item.instructor} · ${item.location}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: _muted,
-                                  fontSize: 10,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Next meeting',
+                                    style: TextStyle(
+                                      color: _muted,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    nextMeetingText,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: _muted,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Class progress',
-                              style: TextStyle(
-                                color: _muted,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '${(progress * 100).round()}%',
-                              style: TextStyle(
-                                color: progressColor,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 5),
-
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 5,
-                            backgroundColor:
-                                const Color(0xFFE0ECFF),
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(
-                              progressColor,
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -1234,7 +927,7 @@ class ClassListCard extends StatelessWidget {
                   tooltip: 'Class options',
                   padding: EdgeInsets.zero,
                   icon: const Icon(
-                    Icons.more_vert,
+                    LucideIcons.moreVertical,
                     color: _muted,
                     size: 21,
                   ),
@@ -1250,11 +943,7 @@ class ClassListCard extends StatelessWidget {
                       value: 'edit',
                       child: Row(
                         children: [
-                          Icon(
-                            Icons.edit_outlined,
-                            size: 18,
-                            color: _blue,
-                          ),
+                          Icon(LucideIcons.pencil, size: 18, color: _blue),
                           SizedBox(width: 10),
                           Text('Edit class'),
                         ],
@@ -1265,16 +954,14 @@ class ClassListCard extends StatelessWidget {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.delete_outline,
+                            LucideIcons.trash2,
                             size: 18,
                             color: AppColors.danger,
                           ),
                           SizedBox(width: 10),
                           Text(
                             'Delete class',
-                            style: TextStyle(
-                              color: AppColors.danger,
-                            ),
+                            style: TextStyle(color: AppColors.danger),
                           ),
                         ],
                       ),
@@ -1299,9 +986,7 @@ class ClassListCard extends StatelessWidget {
 class _AddClassDialog extends StatefulWidget {
   final ClassItem? initialClass;
 
-  const _AddClassDialog({
-    this.initialClass,
-  });
+  const _AddClassDialog({this.initialClass});
 
   @override
   State<_AddClassDialog> createState() => _AddClassDialogState();
@@ -1309,7 +994,7 @@ class _AddClassDialog extends StatefulWidget {
 
 class _AddClassDialogState extends State<_AddClassDialog> {
   static const Color _blue = AppColors.primary;
-  static const Color _darkBlue = AppColors.navy;
+  static const Color _darkBlue = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
 
   final _formKey = GlobalKey<FormState>();
@@ -1335,9 +1020,9 @@ class _AddClassDialogState extends State<_AddClassDialog> {
       _nameController.text = existingClass.name;
       _instructorController.text =
           existingClass.instructor == 'Not specified' ||
-                  existingClass.instructor == 'Personal Class'
-              ? ''
-              : existingClass.instructor;
+              existingClass.instructor == 'Personal Course'
+          ? ''
+          : existingClass.instructor;
       _sectionController.text = existingClass.section;
 
       final parsed = existingClass.effectiveSchedules;
@@ -1448,7 +1133,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
-                      _isEditing ? Icons.edit_outlined : LucideIcons.bookPlus,
+                      _isEditing ? LucideIcons.pencil : LucideIcons.bookPlus,
                       color: _blue,
                       size: 20,
                     ),
@@ -1459,7 +1144,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isEditing ? 'Edit Class' : 'Add a Class',
+                          _isEditing ? 'Update Course' : 'Create Course',
                           style: const TextStyle(
                             color: _darkBlue,
                             fontSize: 17,
@@ -1539,9 +1224,9 @@ class _AddClassDialogState extends State<_AddClassDialog> {
                             _schedules = updated;
                             _scheduleError =
                                 ClassMeetingSchedule.validateSchedules(
-                              updated,
-                              requireAtLeastOne: true,
-                            );
+                                  updated,
+                                  requireAtLeastOne: true,
+                                );
                           });
                         },
                       ),
@@ -1564,7 +1249,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
                   FilledButton.icon(
                     onPressed: _saveClass,
                     icon: Icon(
-                      _isEditing ? Icons.save_outlined : LucideIcons.plus,
+                      _isEditing ? LucideIcons.save : LucideIcons.plus,
                       size: 16,
                     ),
                     label: Text(_isEditing ? 'Save Changes' : 'Add Class'),
@@ -1597,11 +1282,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      decoration: _decoration(
-        label: label,
-        hint: hint,
-        icon: icon,
-      ),
+      decoration: _decoration(label: label, hint: hint, icon: icon),
     );
   }
 
@@ -1617,25 +1298,12 @@ class _AddClassDialogState extends State<_AddClassDialog> {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: const TextStyle(
-        color: _muted,
-        fontSize: 12,
-      ),
-      hintStyle: const TextStyle(
-        color: Color(0xFF9AA8BC),
-        fontSize: 11,
-      ),
-      prefixIcon: Icon(
-        icon,
-        color: _blue,
-        size: 18,
-      ),
+      labelStyle: const TextStyle(color: _muted, fontSize: 12),
+      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+      prefixIcon: Icon(icon, color: _blue, size: 18),
       filled: true,
       fillColor: AppColors.surfaceSoft,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 13,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -1646,10 +1314,7 @@ class _AddClassDialogState extends State<_AddClassDialog> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: _blue,
-          width: 1.2,
-        ),
+        borderSide: const BorderSide(color: _blue, width: 1.2),
       ),
       errorStyle: const TextStyle(fontSize: 10),
     );

@@ -1,4 +1,3 @@
-
 part of '../main.dart';
 
 // ============================================================
@@ -91,9 +90,8 @@ class _AddItemDialogState extends State<AddItemDialog> {
       widget.onAdded();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(formatSupabaseError(e))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
     }
   }
 
@@ -111,9 +109,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(22),
         side: BorderSide(
-          color: isDark
-              ? const Color(0xFF414852)
-              : AppColors.border,
+          color: isDark ? const Color(0xFF414852) : AppColors.border,
         ),
       ),
       title: Row(
@@ -127,10 +123,10 @@ class _AddItemDialogState extends State<AddItemDialog> {
             ),
             child: Icon(
               isClass
-                  ? Icons.menu_book_rounded
+                  ? LucideIcons.bookOpen
                   : isEvent
-                      ? Icons.calendar_month_rounded
-                      : Icons.add_task_rounded,
+                  ? LucideIcons.calendarDays
+                  : LucideIcons.listPlus,
               color: AppColors.primary,
               size: 21,
             ),
@@ -140,7 +136,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
             child: Text(
               dialogTitle,
               style: const TextStyle(
-                color: AppColors.navy,
+                color: AppColors.textPrimary,
                 fontSize: 19,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.4,
@@ -174,7 +170,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
                     isExpanded: true,
                     decoration: const InputDecoration(
                       prefixIcon: Icon(
-                        Icons.category_outlined,
+                        LucideIcons.layoutGrid,
                         color: AppColors.study,
                       ),
                     ),
@@ -183,10 +179,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
                         value: 'Assignment',
                         child: Text('Assignment'),
                       ),
-                      DropdownMenuItem(
-                        value: 'Quiz',
-                        child: Text('Quiz'),
-                      ),
+                      DropdownMenuItem(value: 'Quiz', child: Text('Quiz')),
                       DropdownMenuItem(
                         value: 'Examination',
                         child: Text('Examination'),
@@ -222,7 +215,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
                     hintText: titleLabel,
                     counterText: '',
                     prefixIcon: const Icon(
-                      Icons.edit_note_rounded,
+                      LucideIcons.notebookPen,
                       color: AppColors.primary,
                     ),
                   ),
@@ -254,10 +247,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
                     counterText: '',
                     prefixIcon: Padding(
                       padding: EdgeInsets.only(bottom: 28),
-                      child: Icon(
-                        Icons.subject_rounded,
-                        color: AppColors.info,
-                      ),
+                      child: Icon(LucideIcons.text, color: AppColors.info),
                     ),
                     alignLabelWithHint: true,
                   ),
@@ -274,7 +264,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.info_outline_rounded,
+                        LucideIcons.info,
                         color: AppColors.infoDark,
                         size: 17,
                       ),
@@ -308,7 +298,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
         ),
         FilledButton.icon(
           onPressed: _submit,
-          icon: const Icon(Icons.add_rounded, size: 17),
+          icon: const Icon(LucideIcons.plus, size: 17),
           label: const Text('Add'),
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.primary,
@@ -360,9 +350,7 @@ class GlassNavigationIsland extends StatelessWidget {
     final safeIndex = selectedIndex.clamp(0, labels.length - 1);
 
     final islandColor = theme.colorScheme.surface;
-    final border = isDark
-        ? const Color(0xFF414852)
-        : AppColors.border;
+    final border = isDark ? const Color(0xFF414852) : AppColors.border;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -371,17 +359,11 @@ class GlassNavigationIsland extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 6,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
             decoration: BoxDecoration(
               color: islandColor.withValues(alpha: isDark ? 0.94 : 0.90),
               borderRadius: BorderRadius.circular(35),
-              border: Border.all(
-                color: border,
-                width: 1.1,
-              ),
+              border: Border.all(color: border, width: 1.1),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primary.withValues(
@@ -391,9 +373,7 @@ class GlassNavigationIsland extends StatelessWidget {
                   offset: const Offset(0, 8),
                 ),
                 BoxShadow(
-                  color: Colors.black.withValues(
-                    alpha: isDark ? 0.12 : 0.025,
-                  ),
+                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.025),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -470,8 +450,9 @@ class GlassNavigationIsland extends StatelessWidget {
                                                   alpha: 0.10,
                                                 )
                                               : Colors.transparent,
-                                          borderRadius:
-                                              BorderRadius.circular(11),
+                                          borderRadius: BorderRadius.circular(
+                                            11,
+                                          ),
                                         ),
                                         child: Icon(
                                           icons[index],
@@ -562,12 +543,7 @@ class _AnimatedOwlMascotState extends State<AnimatedOwlMascot>
     _floatAnimation = Tween<double>(
       begin: 0,
       end: -8,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ),
-    );
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override

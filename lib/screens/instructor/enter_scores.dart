@@ -58,8 +58,9 @@ class _InstructorEnterScoresScreenState
   String _category = 'assignment';
 
   final TextEditingController quizTitleController = TextEditingController();
-  final TextEditingController maxScoreController =
-      TextEditingController(text: '20');
+  final TextEditingController maxScoreController = TextEditingController(
+    text: '20',
+  );
 
   bool get _hasAnyAssessment => _tasks.isNotEmpty || _quizzes.isNotEmpty;
 
@@ -89,7 +90,7 @@ class _InstructorEnterScoresScreenState
     if (classId == null || classId.isEmpty) {
       setState(() {
         _isLoading = false;
-        _loadError = 'Please open Enter Scores from a specific class.';
+        _loadError = 'Open Grades from a course.';
       });
       return;
     }
@@ -112,8 +113,9 @@ class _InstructorEnterScoresScreenState
       final quizzes = results[2] as List<QuizRecord>;
       final scores = results[3] as List<ScoreRecord>;
 
-      final approved =
-          enrollments.where((e) => e.status == 'approved').toList();
+      final approved = enrollments
+          .where((e) => e.status == 'approved')
+          .toList();
 
       for (final c in scoreControllers) {
         c.dispose();
@@ -122,11 +124,7 @@ class _InstructorEnterScoresScreenState
       students.clear();
 
       for (final e in approved) {
-        students.add({
-          'name': e.studentName,
-          'id': e.studentId,
-          'score': '',
-        });
+        students.add({'name': e.studentName, 'id': e.studentId, 'score': ''});
         scoreControllers.add(TextEditingController());
       }
 
@@ -136,16 +134,16 @@ class _InstructorEnterScoresScreenState
 
       // Auto-select passed task/quiz or first available task/quiz
       if (_selectedAssignmentId != null) {
-        final match =
-            tasks.where((t) => t.id == _selectedAssignmentId).firstOrNull;
+        final match = tasks
+            .where((t) => t.id == _selectedAssignmentId)
+            .firstOrNull;
         if (match != null) {
           _applySelectedTask(match);
         } else {
           _selectedAssignmentId = null;
         }
       } else if (_selectedQuizId != null) {
-        final match =
-            quizzes.where((q) => q.id == _selectedQuizId).firstOrNull;
+        final match = quizzes.where((q) => q.id == _selectedQuizId).firstOrNull;
         if (match != null) {
           _applySelectedQuiz(match);
         } else {
@@ -182,11 +180,13 @@ class _InstructorEnterScoresScreenState
         : 100.0;
 
     final matched = _existingScores
-        .where((s) =>
-            s.assignmentId == task.id ||
-            (s.assignmentId == null &&
-                s.quizId == null &&
-                s.assessmentName.toLowerCase() == task.title.toLowerCase()))
+        .where(
+          (s) =>
+              s.assignmentId == task.id ||
+              (s.assignmentId == null &&
+                  s.quizId == null &&
+                  s.assessmentName.toLowerCase() == task.title.toLowerCase()),
+        )
         .toList();
 
     final maxToUse = matched.isNotEmpty ? matched.first.maxScore : defaultMax;
@@ -203,14 +203,17 @@ class _InstructorEnterScoresScreenState
     _category = 'quiz';
     quizTitleController.text = quiz.title;
     final matched = _existingScores
-        .where((s) =>
-            s.quizId == quiz.id ||
-            (s.assignmentId == null &&
-                s.quizId == null &&
-                s.assessmentName.toLowerCase() == quiz.title.toLowerCase()))
+        .where(
+          (s) =>
+              s.quizId == quiz.id ||
+              (s.assignmentId == null &&
+                  s.quizId == null &&
+                  s.assessmentName.toLowerCase() == quiz.title.toLowerCase()),
+        )
         .toList();
-    final maxToUse =
-        matched.isNotEmpty ? matched.first.maxScore : quiz.maxScore;
+    final maxToUse = matched.isNotEmpty
+        ? matched.first.maxScore
+        : quiz.maxScore;
     maxScoreController.text = maxToUse == maxToUse.roundToDouble()
         ? maxToUse.toStringAsFixed(0)
         : maxToUse.toString();
@@ -226,8 +229,8 @@ class _InstructorEnterScoresScreenState
       scoreControllers[i].text = existing == null
           ? ''
           : (existing == existing.roundToDouble()
-              ? existing.toStringAsFixed(0)
-              : existing.toString());
+                ? existing.toStringAsFixed(0)
+                : existing.toString());
     }
   }
 
@@ -305,7 +308,7 @@ class _InstructorEnterScoresScreenState
                   DropdownButtonFormField<String>(
                     initialValue: selectedCategory,
                     decoration: _scoreInputDecoration(
-                      label: 'Category',
+                      label: 'Assessment Type',
                       icon: LucideIcons.tag,
                     ),
                     items: const [
@@ -328,7 +331,7 @@ class _InstructorEnterScoresScreenState
                   TextField(
                     controller: quizTitleController,
                     decoration: _scoreInputDecoration(
-                      label: 'Assessment title',
+                      label: 'Assessment Title',
                       icon: LucideIcons.fileText,
                     ),
                   ),
@@ -339,7 +342,7 @@ class _InstructorEnterScoresScreenState
                     controller: maxScoreController,
                     keyboardType: TextInputType.number,
                     decoration: _scoreInputDecoration(
-                      label: 'Maximum score',
+                      label: 'Maximum Score',
                       icon: LucideIcons.calculator,
                     ),
                   ),
@@ -374,9 +377,7 @@ class _InstructorEnterScoresScreenState
                   ),
                   child: const Text(
                     'Save details',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ],
@@ -452,7 +453,7 @@ class _InstructorEnterScoresScreenState
                         padding: EdgeInsets.symmetric(vertical: 28),
                         child: Center(
                           child: Text(
-                            'No recorded scores for this class yet.',
+                            'No grades yet.',
                             style: TextStyle(color: _scoreMuted),
                           ),
                         ),
@@ -508,16 +509,16 @@ class _InstructorEnterScoresScreenState
                                       : first.category.toLowerCase();
                                   quizTitleController.text =
                                       first.assessmentName;
-                                  maxScoreController.text =
-                                      first.maxScore.toStringAsFixed(0);
+                                  maxScoreController.text = first.maxScore
+                                      .toStringAsFixed(0);
                                   for (int i = 0; i < students.length; i++) {
                                     final sid = students[i]['id'] as String;
                                     final existing = byStudent[sid];
                                     scoreControllers[i].text = existing == null
                                         ? ''
                                         : (existing == existing.roundToDouble()
-                                            ? existing.toStringAsFixed(0)
-                                            : existing.toString());
+                                              ? existing.toStringAsFixed(0)
+                                              : existing.toString());
                                   }
                                 });
                               },
@@ -543,7 +544,9 @@ class _InstructorEnterScoresScreenState
     if (_selectedAssignmentId == null && _selectedQuizId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select an existing task or quiz before entering scores.'),
+          content: Text(
+            'Select an existing task or quiz before entering scores.',
+          ),
         ),
       );
       return;
@@ -611,39 +614,22 @@ class _InstructorEnterScoresScreenState
   }) {
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(
-        color: _scoreMuted,
-        fontSize: 13,
-      ),
-      prefixIcon: Icon(
-        icon,
-        size: 18,
-        color: AppColors.primary,
-      ),
+      labelStyle: const TextStyle(color: _scoreMuted, fontSize: 13),
+      prefixIcon: Icon(icon, size: 18, color: AppColors.primary),
       filled: true,
       fillColor: AppColors.surfaceSoft,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: _scoreBorder,
-        ),
+        borderSide: const BorderSide(color: _scoreBorder),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: _scoreBorder,
-        ),
+        borderSide: const BorderSide(color: _scoreBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: AppColors.primary,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
     );
   }
@@ -734,15 +720,11 @@ class _InstructorEnterScoresScreenState
                 fillColor: AppColors.surfaceSoft,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: _scoreBorder,
-                  ),
+                  borderSide: const BorderSide(color: _scoreBorder),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: _scoreBorder,
-                  ),
+                  borderSide: const BorderSide(color: _scoreBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -773,9 +755,7 @@ class _InstructorEnterScoresScreenState
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: _scoreBorder,
-        ),
+        border: Border.all(color: _scoreBorder),
         boxShadow: [
           BoxShadow(
             color: AppColors.navy.withValues(alpha: 0.025),
@@ -818,10 +798,7 @@ class _InstructorEnterScoresScreenState
               ),
 
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 6,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                 decoration: BoxDecoration(
                   color: AppColors.warningLight,
                   borderRadius: BorderRadius.circular(20),
@@ -853,11 +830,7 @@ class _InstructorEnterScoresScreenState
 
           Row(
             children: [
-              const Icon(
-                LucideIcons.bookOpen,
-                size: 13,
-                color: _scoreMuted,
-              ),
+              const Icon(LucideIcons.bookOpen, size: 13, color: _scoreMuted),
               const SizedBox(width: 6),
               Text(
                 '${widget.classItem?['code'] ?? 'Class'} · ${widget.classItem?['section'] ?? 'Section A'}',
@@ -894,10 +867,7 @@ class _InstructorEnterScoresScreenState
           const SizedBox(height: 12),
 
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 11,
-              vertical: 9,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
             decoration: BoxDecoration(
               color: AppColors.surfaceSoft,
               borderRadius: BorderRadius.circular(10),
@@ -950,18 +920,12 @@ class _InstructorEnterScoresScreenState
       decoration: BoxDecoration(
         color: AppColors.infoLight,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: AppColors.infoBorder,
-        ),
+        border: Border.all(color: AppColors.infoBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            LucideIcons.info,
-            color: AppColors.infoDark,
-            size: 18,
-          ),
+          const Icon(LucideIcons.info, color: AppColors.infoDark, size: 18),
 
           const SizedBox(width: 10),
 
@@ -996,11 +960,7 @@ class _InstructorEnterScoresScreenState
         scrolledUnderElevation: 0,
 
         leading: IconButton(
-          icon: const Icon(
-            LucideIcons.arrowLeft,
-            size: 19,
-            color: _scoreNavy,
-          ),
+          icon: const Icon(LucideIcons.arrowLeft, size: 19, color: _scoreNavy),
           onPressed: () => Navigator.pop(context),
         ),
 
@@ -1021,7 +981,7 @@ class _InstructorEnterScoresScreenState
             SizedBox(height: 2),
 
             Text(
-              'Enter Scores',
+              'Grades',
               style: TextStyle(
                 fontSize: 19,
                 fontWeight: FontWeight.w900,
@@ -1034,11 +994,7 @@ class _InstructorEnterScoresScreenState
         actions: [
           IconButton(
             tooltip: 'Past assessments',
-            icon: const Icon(
-              LucideIcons.history,
-              size: 20,
-              color: _scoreNavy,
-            ),
+            icon: const Icon(LucideIcons.history, size: 20, color: _scoreNavy),
             onPressed: _openPastAssessments,
           ),
         ],
@@ -1053,241 +1009,238 @@ class _InstructorEnterScoresScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              // STEP INDICATOR
-              Row(
-                children: [
-                  const Icon(
-                    LucideIcons.clipboardList,
-                    color: AppColors.primary,
-                    size: 15,
-                  ),
-
-                  const SizedBox(width: 7),
-
-                  const Expanded(
-                    child: Text(
-                      'Manual entry · Step 2 of 3',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: _scoreMuted,
-                        fontWeight: FontWeight.w700,
-                      ),
+                // STEP INDICATOR
+                Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.clipboardList,
+                      color: AppColors.primary,
+                      size: 15,
                     ),
-                  ),
 
-                  Text(
-                    '$recordedCount/${students.length} recorded',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AppColors.success,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 7),
 
-              const SizedBox(height: 10),
-
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: LinearProgressIndicator(
-                  value: students.isEmpty
-                      ? 0
-                      : recordedCount / students.length,
-                  minHeight: 6,
-                  backgroundColor: AppColors.border,
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    AppColors.primary,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              if (!_hasAnyAssessment)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: _scoreBorder),
-                  ),
-                  child: const Column(
-                    children: [
-                      Icon(
-                        LucideIcons.clipboardList,
-                        size: 34,
-                        color: AppColors.primary,
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'No tasks or quizzes yet',
+                    const Expanded(
+                      child: Text(
+                        'Manual entry · Step 2 of 3',
                         style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: _scoreNavy,
+                          fontSize: 11,
+                          color: _scoreMuted,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      SizedBox(height: 6),
-                      Text(
-                        'Create a task, assignment, or quiz in this class before entering scores.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _scoreMuted,
-                          height: 1.5,
+                    ),
+
+                    Text(
+                      '$recordedCount/${students.length} recorded',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: LinearProgressIndicator(
+                    value: students.isEmpty
+                        ? 0
+                        : recordedCount / students.length,
+                    minHeight: 6,
+                    backgroundColor: AppColors.border,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                if (!_hasAnyAssessment)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: _scoreBorder),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(
+                          LucideIcons.clipboardList,
+                          size: 34,
+                          color: AppColors.primary,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'No assignments or quizzes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: _scoreNavy,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Create a task, assignment, or quiz in this class before entering scores.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _scoreMuted,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...[
+                  // TASK / QUIZ SELECTOR
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _scoreBorder),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _selectedAssignmentId != null
+                            ? 'task:${_selectedAssignmentId!}'
+                            : (_selectedQuizId != null
+                                  ? 'quiz:${_selectedQuizId!}'
+                                  : null),
+                        hint: const Text('Select task or quiz'),
+                        items: [
+                          ..._tasks.map(
+                            (t) => DropdownMenuItem(
+                              value: 'task:${t.id}',
+                              child: Text(
+                                '${t.category}: ${t.title}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: _scoreNavy,
+                                ),
+                              ),
+                            ),
+                          ),
+                          ..._quizzes.map(
+                            (q) => DropdownMenuItem(
+                              value: 'quiz:${q.id}',
+                              child: Text(
+                                'Quiz: ${q.title}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: _scoreNavy,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() {
+                            if (val.startsWith('task:')) {
+                              final id = val.substring(5);
+                              final t = _tasks
+                                  .where((e) => e.id == id)
+                                  .firstOrNull;
+                              if (t != null) _applySelectedTask(t);
+                            } else if (val.startsWith('quiz:')) {
+                              final id = val.substring(5);
+                              final q = _quizzes
+                                  .where((e) => e.id == id)
+                                  .firstOrNull;
+                              if (q != null) _applySelectedQuiz(q);
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // QUIZ INFORMATION
+                  buildQuizInformationCard(),
+                ],
+
+                const SizedBox(height: 23),
+
+                if (_hasAnyAssessment) ...[
+                  // STUDENT LIST HEADER
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Student scores',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            color: _scoreNavy,
+                          ),
+                        ),
+                      ),
+
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${students.length} students',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                )
-              else ...[
-                // TASK / QUIZ SELECTOR
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _scoreBorder),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: _selectedAssignmentId != null
-                          ? 'task:${_selectedAssignmentId!}'
-                          : (_selectedQuizId != null
-                              ? 'quiz:${_selectedQuizId!}'
-                              : null),
-                      hint: const Text('Select task or quiz'),
-                      items: [
-                        ..._tasks.map(
-                          (t) => DropdownMenuItem(
-                            value: 'task:${t.id}',
-                            child: Text(
-                              '${t.category}: ${t.title}',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: _scoreNavy,
-                              ),
-                            ),
-                          ),
-                        ),
-                        ..._quizzes.map(
-                          (q) => DropdownMenuItem(
-                            value: 'quiz:${q.id}',
-                            child: Text(
-                              'Quiz: ${q.title}',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: _scoreNavy,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val == null) return;
-                        setState(() {
-                          if (val.startsWith('task:')) {
-                            final id = val.substring(5);
-                            final t = _tasks.where((e) => e.id == id).firstOrNull;
-                            if (t != null) _applySelectedTask(t);
-                          } else if (val.startsWith('quiz:')) {
-                            final id = val.substring(5);
-                            final q =
-                                _quizzes.where((e) => e.id == id).firstOrNull;
-                            if (q != null) _applySelectedQuiz(q);
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                ),
 
-                const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
-                // QUIZ INFORMATION
-                buildQuizInformationCard(),
-              ],
-
-              const SizedBox(height: 23),
-
-              if (_hasAnyAssessment) ...[
-
-              // STUDENT LIST HEADER
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Student scores',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: _scoreNavy,
-                      ),
-                    ),
+                  Text(
+                    'Enter each student\'s score out of ${maxScoreController.text}.',
+                    style: const TextStyle(fontSize: 11, color: _scoreMuted),
                   ),
 
+                  const SizedBox(height: 12),
+
+                  // STUDENT SCORE LIST
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: 13,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(20),
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: _scoreBorder),
                     ),
-                    child: Text(
-                      '${students.length} students',
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 5),
-
-              Text(
-                'Enter each student\'s score out of ${maxScoreController.text}.',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: _scoreMuted,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // STUDENT SCORE LIST
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: _scoreBorder,
-                  ),
-                ),
-                child: _isLoading
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : _loadError != null
+                    child: _isLoading
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        : _loadError != null
                         ? Padding(
                             padding: const EdgeInsets.all(16),
                             child: Text(
@@ -1296,122 +1249,117 @@ class _InstructorEnterScoresScreenState
                             ),
                           )
                         : students.isEmpty
-                            ? const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text(
-                                  'No approved students enrolled in this class yet.',
-                                  style: TextStyle(
-                                    color: _scoreMuted,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              )
-                            : Column(
-                                children: [
-                                  ...List.generate(
-                                    students.length,
-                                    (index) => Column(
-                                      children: [
-                                        buildStudentRow(index),
-
-                                        if (index != students.length - 1)
-                                          const Divider(
-                                            height: 1,
-                                            color: AppColors.divider,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                        ? const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'No approved students are enrolled in this course.',
+                              style: TextStyle(
+                                color: _scoreMuted,
+                                fontSize: 13,
                               ),
-              ),
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              ...List.generate(
+                                students.length,
+                                (index) => Column(
+                                  children: [
+                                    buildStudentRow(index),
 
-              const SizedBox(height: 15),
-
-              // SCORE INFORMATION
-              buildScoreInformation(),
-
-              const SizedBox(height: 20),
-
-              // ACTION BUTTONS
-              Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 51,
-                      child: OutlinedButton.icon(
-                        onPressed: openEditDetails,
-                        icon: const Icon(
-                          LucideIcons.settings2,
-                          size: 16,
-                        ),
-                        label: const Text(
-                          'Edit details',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
+                                    if (index != students.length - 1)
+                                      const Divider(
+                                        height: 1,
+                                        color: AppColors.divider,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          backgroundColor: AppColors.surface,
-                          side: const BorderSide(
-                            color: AppColors.border,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  // SCORE INFORMATION
+                  buildScoreInformation(),
+
+                  const SizedBox(height: 20),
+
+                  // ACTION BUTTONS
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 51,
+                          child: OutlinedButton.icon(
+                            onPressed: openEditDetails,
+                            icon: const Icon(LucideIcons.settings2, size: 16),
+                            label: const Text(
+                              'Edit details',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              backgroundColor: AppColors.surface,
+                              side: const BorderSide(color: AppColors.border),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+
+                      const SizedBox(width: 10),
+
+                      Expanded(
+                        child: SizedBox(
+                          height: 51,
+                          child: ElevatedButton.icon(
+                            onPressed: openReviewScores,
+                            icon: const Icon(
+                              LucideIcons.clipboardCheck,
+                              size: 16,
+                            ),
+                            label: const Text(
+                              'Review scores',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
 
-                  const SizedBox(width: 10),
+                  const SizedBox(height: 12),
 
-                  Expanded(
-                    child: SizedBox(
-                      height: 51,
-                      child: ElevatedButton.icon(
-                        onPressed: openReviewScores,
-                        icon: const Icon(
-                          LucideIcons.clipboardCheck,
-                          size: 16,
-                        ),
-                        label: const Text(
-                          'Review scores',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
+                  Center(
+                    child: Text(
+                      '$recordedCount of ${students.length} scores recorded',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: _scoreMuted,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
-              ),
-
-              const SizedBox(height: 12),
-
-              Center(
-                child: Text(
-                  '$recordedCount of ${students.length} scores recorded',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: _scoreMuted,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
               ],
-            ],
             ),
           ),
         ),
@@ -1421,71 +1369,67 @@ class _InstructorEnterScoresScreenState
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: AppColors.surface,
-          border: Border(
-            top: BorderSide(
-              color: AppColors.border,
-            ),
-          ),
+          border: Border(top: BorderSide(color: AppColors.border)),
         ),
         child: SafeArea(
           top: false,
-          child: SizedBox(
-            height: 58,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const InstructorDashboard(
-                          initialIndex: 0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: SizedBox(
+              height: 58,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const InstructorDashboard(initialIndex: 0),
                         ),
-                      ),
-                    );
-                  },
-                  child: const _BottomNavItem(
-                    icon: LucideIcons.house,
-                    label: 'Home',
+                      );
+                    },
+                    child: const _BottomNavItem(
+                      icon: LucideIcons.house,
+                      label: 'Dashboard',
+                    ),
                   ),
-                ),
 
-                GestureDetector(
-                  onTap: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const InstructorDashboard(
-                          initialIndex: 1,
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const InstructorDashboard(initialIndex: 1),
                         ),
-                      ),
-                    );
-                  },
-                  child: const _BottomNavItem(
-                    icon: LucideIcons.bookOpen,
-                    label: 'Classes',
-                    selected: true,
+                      );
+                    },
+                    child: const _BottomNavItem(
+                      icon: LucideIcons.bookOpen,
+                      label: 'Courses',
+                      selected: true,
+                    ),
                   ),
-                ),
 
-                GestureDetector(
-                  onTap: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const InstructorDashboard(
-                          initialIndex: 2,
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const InstructorDashboard(initialIndex: 2),
                         ),
-                      ),
-                    );
-                  },
-                  child: const _BottomNavItem(
-                    icon: LucideIcons.userRound,
-                    label: 'Profile',
+                      );
+                    },
+                    child: const _BottomNavItem(
+                      icon: LucideIcons.userRound,
+                      label: 'Profile',
+                    ),
                   ),
-                ),
-              ],
+                ].map((item) => Expanded(child: Center(child: item))).toList(),
+              ),
             ),
           ),
         ),
@@ -1533,11 +1477,7 @@ class InstructorReviewScoresScreen extends StatelessWidget {
         scrolledUnderElevation: 0,
 
         leading: IconButton(
-          icon: const Icon(
-            LucideIcons.arrowLeft,
-            size: 19,
-            color: _scoreNavy,
-          ),
+          icon: const Icon(LucideIcons.arrowLeft, size: 19, color: _scoreNavy),
           onPressed: () => Navigator.pop(context),
         ),
 
@@ -1552,173 +1492,26 @@ class InstructorReviewScoresScreen extends StatelessWidget {
       ),
 
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // REVIEW HEADER
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(17),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: _scoreBorder,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // REVIEW HEADER
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(17),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: _scoreBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 39,
-                          height: 39,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryLight,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            LucideIcons.clipboardCheck,
-                            color: AppColors.primary,
-                            size: 19,
-                          ),
-                        ),
-
-                        const SizedBox(width: 11),
-
-                        const Expanded(
-                          child: Text(
-                            'SCORE REVIEW',
-                            style: TextStyle(
-                              color: _scoreMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.warningLight,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'NOT SAVED',
-                            style: TextStyle(
-                              color: AppColors.warningDark,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    Text(
-                      quizTitle,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: _scoreNavy,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Text(
-                      '$recorded of ${students.length} scores recorded',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: _scoreMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      'Maximum score: $maxScore',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: _scoreMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // STUDENT RECORDS HEADER
-              const Text(
-                'Student records',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: _scoreNavy,
-                ),
-              ),
-
-              const SizedBox(height: 5),
-
-              const Text(
-                'Review the entered scores before confirming.',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: _scoreMuted,
-                ),
-              ),
-
-              const SizedBox(height: 13),
-
-              // STUDENT SCORE RECORDS
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 13,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: _scoreBorder,
-                    ),
-                  ),
-                  child: ListView.separated(
-                    itemCount: students.length,
-                    separatorBuilder: (context, index) {
-                      return const Divider(
-                        height: 1,
-                        color: AppColors.divider,
-                      );
-                    },
-                    itemBuilder: (context, index) {
-                      final student = students[index];
-
-                      final String score =
-                          student['score']!.isEmpty
-                              ? 'Not recorded'
-                              : student['score']!;
-
-                      final bool hasScore =
-                          student['score']!.isNotEmpty;
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 9,
-                        ),
-                        child: Row(
+                        Row(
                           children: [
                             Container(
                               width: 39,
@@ -1728,178 +1521,310 @@ class InstructorReviewScoresScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(
-                                LucideIcons.userRound,
+                                LucideIcons.clipboardCheck,
                                 color: AppColors.primary,
-                                size: 18,
+                                size: 19,
                               ),
                             ),
 
                             const SizedBox(width: 11),
 
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    student['name']!,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: _scoreNavy,
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 4),
-
-                                  Text(
-                                    student['id']!,
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      color: _scoreMuted,
-                                    ),
-                                  ),
-                                ],
+                            const Expanded(
+                              child: Text(
+                                'SCORE REVIEW',
+                                style: TextStyle(
+                                  color: _scoreMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                ),
                               ),
                             ),
 
-                            const SizedBox(width: 8),
-
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
+                                horizontal: 9,
+                                vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: hasScore
-                                    ? AppColors.successLight
-                                    : AppColors.warningLight,
-                                borderRadius: BorderRadius.circular(10),
+                                color: AppColors.warningLight,
+                                borderRadius: BorderRadius.circular(20),
                               ),
-                              child: Text(
-                                score,
+                              child: const Text(
+                                'NOT SAVED',
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: hasScore
-                                      ? AppColors.successDark
-                                      : AppColors.warningDark,
+                                  color: AppColors.warningDark,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                      );
-                    },
-                  ),
-                ),
-              ),
 
-              const SizedBox(height: 15),
+                        const SizedBox(height: 15),
 
-              // BACK TO EDIT
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(
-                    LucideIcons.pencil,
-                    size: 16,
-                  ),
-                  label: const Text(
-                    'Back to edit',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    backgroundColor: AppColors.surface,
-                    side: const BorderSide(
-                      color: AppColors.border,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 9),
-
-              // SAVE SCORES
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                  ),
-                  onPressed: () async {
-                    if (classId.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Missing class ID.')),
-                      );
-                      return;
-                    }
-
-                    final maxVal = double.tryParse(maxScore.trim()) ?? 0;
-                    final entries = <String, double>{};
-                    for (final s in students) {
-                      final raw = (s['score'] ?? '').trim();
-                      if (raw.isEmpty) continue;
-                      final val = double.tryParse(raw);
-                      if (val != null) {
-                        entries[s['id']!] = val;
-                      }
-                    }
-
-                    try {
-                      await AcademicService.saveAssessmentScores(
-                        classId: classId,
-                        assignmentId: assignmentId,
-                        quizId: quizId,
-                        assessmentName: quizTitle,
-                        category: category,
-                        maxScore: maxVal,
-                        studentScores: entries,
-                      );
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Scores saved to Supabase.'),
+                        Text(
+                          quizTitle,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: _scoreNavy,
+                          ),
                         ),
-                      );
-                      Navigator.pop(context, true);
-                    } catch (e) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(formatSupabaseError(e))),
-                      );
-                    }
-                  },
-                  icon: const Icon(
-                    LucideIcons.save,
-                    size: 17,
-                  ),
-                  label: const Text(
-                    'Save scores',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
+
+                        const SizedBox(height: 8),
+
+                        Text(
+                          '$recorded of ${students.length} scores recorded',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _scoreMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+
+                        const SizedBox(height: 5),
+
+                        Text(
+                          'Maximum score: $maxScore',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _scoreMuted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+
+                  const SizedBox(height: 20),
+
+                  // STUDENT RECORDS HEADER
+                  const Text(
+                    'Student records',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: _scoreNavy,
+                    ),
+                  ),
+
+                  const SizedBox(height: 5),
+
+                  const Text(
+                    'Review the entered scores before confirming.',
+                    style: TextStyle(fontSize: 11, color: _scoreMuted),
+                  ),
+
+                  const SizedBox(height: 13),
+
+                  // STUDENT SCORE RECORDS
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: _scoreBorder),
+                      ),
+                      child: ListView.separated(
+                        itemCount: students.length,
+                        separatorBuilder: (context, index) {
+                          return const Divider(
+                            height: 1,
+                            color: AppColors.divider,
+                          );
+                        },
+                        itemBuilder: (context, index) {
+                          final student = students[index];
+
+                          final String score = student['score']!.isEmpty
+                              ? 'Not recorded'
+                              : student['score']!;
+
+                          final bool hasScore = student['score']!.isNotEmpty;
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 39,
+                                  height: 39,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryLight,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    LucideIcons.userRound,
+                                    color: AppColors.primary,
+                                    size: 18,
+                                  ),
+                                ),
+
+                                const SizedBox(width: 11),
+
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        student['name']!,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: _scoreNavy,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 4),
+
+                                      Text(
+                                        student['id']!,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: _scoreMuted,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(width: 8),
+
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: hasScore
+                                        ? AppColors.successLight
+                                        : AppColors.warningLight,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    score,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: hasScore
+                                          ? AppColors.successDark
+                                          : AppColors.warningDark,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  // BACK TO EDIT
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(LucideIcons.pencil, size: 16),
+                      label: const Text(
+                        'Back to edit',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        backgroundColor: AppColors.surface,
+                        side: const BorderSide(color: AppColors.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 9),
+
+                  // SAVE SCORES
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      onPressed: () async {
+                        if (classId.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Missing class ID.')),
+                          );
+                          return;
+                        }
+
+                        final maxVal = double.tryParse(maxScore.trim()) ?? 0;
+                        final entries = <String, double>{};
+                        for (final s in students) {
+                          final raw = (s['score'] ?? '').trim();
+                          if (raw.isEmpty) continue;
+                          final val = double.tryParse(raw);
+                          if (val != null) {
+                            entries[s['id']!] = val;
+                          }
+                        }
+
+                        try {
+                          await AcademicService.saveAssessmentScores(
+                            classId: classId,
+                            assignmentId: assignmentId,
+                            quizId: quizId,
+                            assessmentName: quizTitle,
+                            category: category,
+                            maxScore: maxVal,
+                            studentScores: entries,
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Scores saved to Supabase.'),
+                            ),
+                          );
+                          Navigator.pop(context, true);
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(formatSupabaseError(e))),
+                          );
+                        }
+                      },
+                      icon: const Icon(LucideIcons.save, size: 17),
+                      label: const Text(
+                        'Save scores',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -1923,18 +1848,12 @@ class _BottomNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected
-        ? AppColors.primary
-        : AppColors.textSecondary;
+    final color = selected ? AppColors.primary : AppColors.textSecondary;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(
-          icon,
-          size: 19,
-          color: color,
-        ),
+        Icon(icon, size: 19, color: color),
 
         const SizedBox(height: 4),
 
@@ -1942,9 +1861,7 @@ class _BottomNavItem extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 10,
-            fontWeight: selected
-                ? FontWeight.w800
-                : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
             color: color,
           ),
         ),

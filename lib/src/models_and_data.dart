@@ -1,4 +1,3 @@
-
 part of '../main.dart';
 
 // ============================================================
@@ -87,6 +86,8 @@ class TaskItem {
 
 class NoticeItem {
   final String? id;
+  final String classId;
+  final String announcementId;
   final String title;
   final String message;
   final String time;
@@ -96,6 +97,8 @@ class NoticeItem {
 
   NoticeItem({
     this.id,
+    this.classId = '',
+    this.announcementId = '',
     required this.title,
     required this.message,
     required this.time,

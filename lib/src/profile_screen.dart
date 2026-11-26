@@ -15,12 +15,15 @@ class _ProfilePageState extends State<ProfilePage> {
   static const Color _blue = AppColors.primary;
   static const Color _navy = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
-  static const Color _background = AppColors.background;
   static const Color _border = AppColors.border;
   static const Color _ice = AppColors.primaryLight;
+  static const Color _logoutFill = Color(0xFFFEF2F2);
+  static const Color _logoutBorder = Color(0xFFFECACA);
+  static const Color _logoutText = Color(0xFFDC2626);
 
   UserProfile? _profile;
   bool _loading = true;
+  String? _profileError;
 
   @override
   void initState() {
@@ -29,6 +32,13 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadProfile() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _profileError = null;
+      });
+    }
+
     try {
       final profile = await AuthService.getCurrentProfile();
       if (mounted) {
@@ -37,9 +47,12 @@ class _ProfilePageState extends State<ProfilePage> {
           _loading = false;
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          _profileError = formatSupabaseError(error);
+        });
       }
     }
   }
@@ -57,7 +70,7 @@ class _ProfilePageState extends State<ProfilePage> {
             borderRadius: BorderRadius.circular(20),
           ),
           title: const Text(
-            'Personal information',
+            'Personal Information',
             style: TextStyle(
               color: _navy,
               fontSize: 17,
@@ -78,7 +91,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   validator: (v) {
                     if (v == null || v.trim().length < 2) {
-                      return 'Please enter your full name.';
+                      return 'Enter your full name.';
                     }
                     return null;
                   },
@@ -125,13 +138,12 @@ class _ProfilePageState extends State<ProfilePage> {
         if (!mounted) return;
         setState(() => _profile = updated);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated.')),
+          const SnackBar(content: Text('Account settings updated.')),
         );
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatSupabaseError(e))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
       }
     }
     controller.dispose();
@@ -168,17 +180,17 @@ class _ProfilePageState extends State<ProfilePage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SwitchListTile(
-                    title: const Text('Class updates'),
+                    title: const Text('Course Updates'),
                     value: classes,
                     onChanged: (v) => setDialogState(() => classes = v),
                   ),
                   SwitchListTile(
-                    title: const Text('Task deadlines'),
+                    title: const Text('Submission and Personal Task Reminders'),
                     value: tasks,
                     onChanged: (v) => setDialogState(() => tasks = v),
                   ),
                   SwitchListTile(
-                    title: const Text('Calendar events'),
+                    title: const Text('Calendar Events'),
                     value: events,
                     onChanged: (v) => setDialogState(() => events = v),
                   ),
@@ -192,7 +204,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext, true),
                   child: const Text(
-                    'Save',
+                    'Save Changes',
                     style: TextStyle(color: _blue, fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -220,9 +232,8 @@ class _ProfilePageState extends State<ProfilePage> {
         );
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(formatSupabaseError(e))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
       }
     }
   }
@@ -343,19 +354,12 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           content: const Text(
             'Are you sure you want to leave your account?',
-            style: TextStyle(
-              color: _muted,
-              fontSize: 13,
-              height: 1.5,
-            ),
+            style: TextStyle(color: _muted, fontSize: 13, height: 1.5),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: _muted),
-              ),
+              child: const Text('Cancel', style: TextStyle(color: _muted)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
@@ -386,177 +390,50 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: _background,
+    return ResponsiveContainer(
+      maxWidth: 920,
       child: ListView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 110),
+        padding: const EdgeInsets.only(bottom: AppSpacing.xxxl + 62),
         children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // BLUE HEADER
-              Container(
-                height: 220,
-                padding: const EdgeInsets.fromLTRB(24, 25, 24, 0),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: AppColors.primaryGradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(32),
-                    bottomRight: Radius.circular(32),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 35,
-                          height: 35,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: const Icon(
-                            Icons.person_outline_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'MY ACCOUNT',
-                          style: TextStyle(
-                            color: Color(0xFFDCE8FF),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.8,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 17),
-                    const Text(
-                      'Your Profile',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 27,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.7,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Manage your personal account',
-                      style: TextStyle(
-                        color: Color(0xFFDCE8FF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // WHITE CONTENT PANEL
-              Padding(
-                padding: const EdgeInsets.only(top: 166),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 15),
-                  padding: const EdgeInsets.fromLTRB(17, 20, 17, 24),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(26),
-                    border: Border.all(color: _border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.navy.withValues(alpha: 0.07),
-                        blurRadius: 22,
-                        offset: const Offset(0, 7),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildProfileCard(context),
-
-                      const SizedBox(height: 27),
-
-                      _buildSectionHeader(),
-
-                      const SizedBox(height: 14),
-
-                      ProfileOption(
-                        icon: Icons.badge_outlined,
-                        title: 'Personal information',
-                        subtitle: 'View and update your account details',
-                        onTap: _editPersonalInfo,
-                      ),
-
-                      ProfileOption(
-                        icon: Icons.notifications_active_outlined,
-                        title: 'Notification preferences',
-                        subtitle: 'Manage your notification settings',
-                        onTap: _editNotificationPreferences,
-                      ),
-
-                      ProfileOption(
-                        icon: Icons.shield_outlined,
-                        title: 'Privacy and security',
-                        subtitle: 'Manage your account security',
-                        onTap: _showSecurityDialog,
-                      ),
-
-                      ProfileOption(
-                        icon: Icons.support_agent_rounded,
-                        title: 'Help and support',
-                        subtitle: 'Get assistance with Iskolarium',
-                        onTap: _showHelpDialog,
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      _buildLogout(context),
-
-                      const SizedBox(height: 24),
-
-                      const Center(
-                        child: Column(
-                          children: [
-                            Text(
-                              'ISKOLARIUM',
-                              style: TextStyle(
-                                color: _navy,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 2,
-                              ),
-                            ),
-                            SizedBox(height: 5),
-                            Text(
-                              'YOUR ACADEMIC COMPANION',
-                              style: TextStyle(
-                                color: _muted,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.1,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          const AcademicPageHeader(
+            eyebrow: 'ACCOUNT',
+            title: 'Profile',
+            subtitle: 'Manage your personal account and preferences',
           ),
+          if (_profileError != null)
+            AsyncErrorView(message: _profileError!, onRetry: _loadProfile)
+          else
+            _buildProfileCard(context),
+          const SizedBox(height: AppSpacing.xl),
+          _buildSectionHeader(),
+          const SizedBox(height: AppSpacing.md),
+          ProfileOption(
+            icon: LucideIcons.badge,
+            title: 'Personal Information',
+            subtitle: 'View and update details',
+            onTap: _editPersonalInfo,
+          ),
+          ProfileOption(
+            icon: LucideIcons.bellRing,
+            title: 'Notification preferences',
+            subtitle: 'Manage your notification settings',
+            onTap: _editNotificationPreferences,
+          ),
+          ProfileOption(
+            icon: LucideIcons.shield,
+            title: 'Privacy and security',
+            subtitle: 'Manage your account security',
+            onTap: _showSecurityDialog,
+          ),
+          ProfileOption(
+            icon: LucideIcons.headset,
+            title: 'Help and support',
+            subtitle: 'Get assistance with Iskolarium',
+            onTap: _showHelpDialog,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _buildLogout(context),
         ],
       ),
     );
@@ -570,8 +447,8 @@ class _ProfilePageState extends State<ProfilePage> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surfaceSoft,
-        borderRadius: BorderRadius.circular(18),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
         border: Border.all(color: _border),
       ),
       child: Row(
@@ -581,13 +458,9 @@ class _ProfilePageState extends State<ProfilePage> {
             height: 62,
             decoration: BoxDecoration(
               color: _ice,
-              borderRadius: BorderRadius.circular(19),
+              shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.person_rounded,
-              color: _blue,
-              size: 37,
-            ),
+            child: const Icon(LucideIcons.user, color: _blue, size: 28),
           ),
 
           const SizedBox(width: 13),
@@ -600,8 +473,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   _loading
                       ? 'Loading...'
                       : (_profile?.fullName.isNotEmpty == true
-                          ? _profile!.fullName
-                          : 'Student Account'),
+                            ? _profile!.fullName
+                            : 'Student Account'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -617,10 +490,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       : (AuthService.currentUser?.email ?? 'Account details'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _muted,
-                    fontSize: 11,
-                  ),
+                  style: const TextStyle(color: _muted, fontSize: 11),
                 ),
                 const SizedBox(height: 9),
                 const _StudentRoleBadge(),
@@ -633,11 +503,7 @@ class _ProfilePageState extends State<ProfilePage> {
           IconButton(
             tooltip: 'Edit profile',
             onPressed: _editPersonalInfo,
-            icon: const Icon(
-              Icons.edit_rounded,
-              color: _blue,
-              size: 18,
-            ),
+            icon: const Icon(LucideIcons.pencil, color: _blue, size: 18),
             style: IconButton.styleFrom(
               backgroundColor: _ice,
               fixedSize: const Size(38, 38),
@@ -663,9 +529,7 @@ class _ProfilePageState extends State<ProfilePage> {
           height: 19,
           decoration: BoxDecoration(
             color: _blue,
-            borderRadius: const BorderRadius.all(
-              Radius.circular(5),
-            ),
+            borderRadius: const BorderRadius.all(Radius.circular(5)),
           ),
         ),
         const SizedBox(width: 10),
@@ -687,45 +551,32 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildLogout(BuildContext context) {
     return Material(
-      color: AppColors.dangerLight,
+      color: _logoutFill,
       borderRadius: BorderRadius.circular(15),
       child: InkWell(
         onTap: () => _confirmLogout(context),
         borderRadius: BorderRadius.circular(15),
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 15,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(
-              color: AppColors.dangerBorder,
-            ),
+            border: Border.all(color: _logoutBorder),
           ),
           child: const Row(
             children: [
-              Icon(
-                Icons.logout_rounded,
-                color: AppColors.danger,
-                size: 20,
-              ),
+              Icon(LucideIcons.logOut, color: _logoutText, size: 20),
               SizedBox(width: 12),
               Expanded(
                 child: Text(
                   'Log out',
                   style: TextStyle(
-                    color: AppColors.danger,
+                    color: _logoutText,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: AppColors.danger,
-                size: 14,
-              ),
+              Icon(LucideIcons.chevronRight, color: _logoutText, size: 14),
             ],
           ),
         ),
@@ -744,10 +595,7 @@ class _StudentRoleBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 4,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(20),
@@ -804,10 +652,7 @@ class ProfileOption extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(15),
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(15),
               border: Border.all(color: _border),
@@ -821,11 +666,7 @@ class ProfileOption extends StatelessWidget {
                     color: _ice,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    icon,
-                    color: iconColor,
-                    size: 19,
-                  ),
+                  child: Icon(icon, color: iconColor, size: 19),
                 ),
 
                 const SizedBox(width: 12),
@@ -857,11 +698,7 @@ class ProfileOption extends StatelessWidget {
                   ),
                 ),
 
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: _muted,
-                  size: 21,
-                ),
+                const Icon(LucideIcons.chevronRight, color: _muted, size: 21),
               ],
             ),
           ),

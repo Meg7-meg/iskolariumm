@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -10,6 +12,7 @@ import 'package:iskolarium/screens/student/student_dashboard.dart';
 import 'screens/auth/welcome_screen.dart';
 import 'screens/student/student_attendance_screen.dart';
 import 'services/academic_service.dart';
+import 'services/app_theme_service.dart';
 import 'services/auth_service.dart';
 import 'services/class_service.dart';
 import 'services/organizer_service.dart';
@@ -102,41 +105,59 @@ class IskolariumApp extends StatefulWidget {
 
     Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const _AuthGate(
-          isDarkMode: false,
-          onToggleTheme: _noopThemeToggle,
+        builder: (_) => _AuthGate(
+          isDarkMode: AppThemeService.isDarkMode,
+          onToggleTheme: AppThemeService.toggleTheme,
         ),
       ),
       (route) => false,
     );
   }
 
-  static void _noopThemeToggle() {}
-
   @override
   State<IskolariumApp> createState() => _IskolariumAppState();
 }
 
-class _IskolariumAppState extends State<IskolariumApp> {
-  bool isDarkMode = false;
+class _IskolariumAppState extends State<IskolariumApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppThemeService.themeMode.addListener(_handleThemeModeChanged);
+  }
 
-  void toggleTheme() {
-    setState(() {
-      isDarkMode = !isDarkMode;
-    });
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppThemeService.themeMode.removeListener(_handleThemeModeChanged);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    if (AppThemeService.themeMode.value == ThemeMode.system) {
+      _handleThemeModeChanged();
+    }
+  }
+
+  void _handleThemeModeChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = AppThemeService.themeMode.value;
+    final isDarkMode = AppThemeService.isDarkMode;
     return MaterialApp(
       title: 'Iskolarium',
       debugShowCheckedModeBanner: false,
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
-      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: themeMode,
       home: _AuthGate(
         isDarkMode: isDarkMode,
-        onToggleTheme: toggleTheme,
+        onToggleTheme: AppThemeService.toggleTheme,
       ),
     );
   }
@@ -152,6 +173,7 @@ class _IskolariumAppState extends State<IskolariumApp> {
       scaffoldBackgroundColor: AppColors.background,
       primaryColor: AppColors.primary,
       fontFamily: 'Roboto',
+      iconTheme: const IconThemeData(size: 20),
 
       colorScheme: const ColorScheme.light(
         primary: AppColors.primary,
@@ -182,47 +204,109 @@ class _IskolariumAppState extends State<IskolariumApp> {
       ),
 
       textTheme: const TextTheme(
-        displayLarge: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-        displayMedium: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        displaySmall: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        headlineLarge: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        headlineMedium: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary, fontSize: 22),
-        headlineSmall: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 18),
-        titleLarge: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 15),
-        titleMedium: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 14),
-        titleSmall: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 13),
-        bodyLarge: TextStyle(fontWeight: FontWeight.w400, color: AppColors.textPrimary, fontSize: 15),
-        bodyMedium: TextStyle(fontWeight: FontWeight.w400, color: AppColors.textPrimary, fontSize: 13),
-        bodySmall: TextStyle(fontWeight: FontWeight.w400, color: AppColors.textSecondary, fontSize: 12),
-        labelLarge: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontSize: 13),
-        labelMedium: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary, fontSize: 11),
-        labelSmall: TextStyle(fontWeight: FontWeight.w500, color: AppColors.textSecondary, fontSize: 11),
+        displayLarge: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        displayMedium: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        displaySmall: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        headlineLarge: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        headlineMedium: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+          fontSize: 22,
+        ),
+        headlineSmall: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+          fontSize: 18,
+        ),
+        titleLarge: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+          fontSize: 15,
+        ),
+        titleMedium: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+          fontSize: 14,
+        ),
+        titleSmall: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+          fontSize: 13,
+        ),
+        bodyLarge: TextStyle(
+          fontWeight: FontWeight.w400,
+          color: AppColors.textPrimary,
+          fontSize: 15,
+        ),
+        bodyMedium: TextStyle(
+          fontWeight: FontWeight.w400,
+          color: AppColors.textPrimary,
+          fontSize: 13,
+        ),
+        bodySmall: TextStyle(
+          fontWeight: FontWeight.w400,
+          color: AppColors.textSecondary,
+          fontSize: 12,
+        ),
+        labelLarge: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+          fontSize: 13,
+        ),
+        labelMedium: TextStyle(
+          fontWeight: FontWeight.w500,
+          color: AppColors.textSecondary,
+          fontSize: 11,
+        ),
+        labelSmall: TextStyle(
+          fontWeight: FontWeight.w500,
+          color: AppColors.textSecondary,
+          fontSize: 11,
+        ),
       ),
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surfaceSoft,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        fillColor: AppColors.surface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
         hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        labelStyle: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 13,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           borderSide: const BorderSide(color: AppColors.danger, width: 1.3),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.md),
           borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
         ),
       ),
@@ -232,7 +316,7 @@ class _IskolariumAppState extends State<IskolariumApp> {
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.lg),
           side: const BorderSide(color: AppColors.border),
         ),
         margin: EdgeInsets.zero,
@@ -249,8 +333,10 @@ class _IskolariumAppState extends State<IskolariumApp> {
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
@@ -262,8 +348,10 @@ class _IskolariumAppState extends State<IskolariumApp> {
           disabledBackgroundColor: AppColors.disabled,
           disabledForegroundColor: Colors.white,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
@@ -272,8 +360,10 @@ class _IskolariumAppState extends State<IskolariumApp> {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.textPrimary,
           side: const BorderSide(color: AppColors.border),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
@@ -300,13 +390,17 @@ class _IskolariumAppState extends State<IskolariumApp> {
           fontWeight: FontWeight.w500,
         ),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+        ),
       ),
 
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.surface,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+        ),
         titleTextStyle: const TextStyle(
           color: AppColors.textPrimary,
           fontSize: 16,
@@ -359,13 +453,14 @@ class _IskolariumAppState extends State<IskolariumApp> {
       useMaterial3: true,
       brightness: Brightness.dark,
       scaffoldBackgroundColor: darkBackground,
-      primaryColor: const Color(0xFF60A5FA),
+      primaryColor: AppColors.primary,
       fontFamily: 'Roboto',
+      iconTheme: const IconThemeData(size: 20),
 
       colorScheme: const ColorScheme.dark(
-        primary: Color(0xFF60A5FA),
+        primary: AppColors.primary,
         onPrimary: Color(0xFF0A1628),
-        secondary: Color(0xFFA78BFA),
+        secondary: AppColors.primaryLight,
         onSecondary: Color(0xFF0A1628),
         error: Color(0xFFF87171),
         onError: Color(0xFF450A0A),
@@ -387,16 +482,13 @@ class _IskolariumAppState extends State<IskolariumApp> {
         color: darkSurface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadii.lg),
           side: const BorderSide(color: darkBorder),
         ),
         margin: EdgeInsets.zero,
       ),
 
-      dividerTheme: const DividerThemeData(
-        color: darkBorder,
-        thickness: 1,
-      ),
+      dividerTheme: const DividerThemeData(color: darkBorder, thickness: 1),
 
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -404,13 +496,12 @@ class _IskolariumAppState extends State<IskolariumApp> {
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(13),
+            borderRadius: BorderRadius.circular(AppRadii.md),
           ),
         ),
       ),
 
-      floatingActionButtonTheme:
-          const FloatingActionButtonThemeData(
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: Color(0xFF2563EB),
         foregroundColor: Colors.white,
       ),
@@ -422,10 +513,7 @@ class _AuthGate extends StatefulWidget {
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
 
-  const _AuthGate({
-    required this.isDarkMode,
-    required this.onToggleTheme,
-  });
+  const _AuthGate({required this.isDarkMode, required this.onToggleTheme});
 
   @override
   State<_AuthGate> createState() => _AuthGateState();

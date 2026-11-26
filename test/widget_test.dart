@@ -41,6 +41,101 @@ void main() {
     expect(score.percentage, 90.0);
   });
 
+  test(
+    'academic record dates use Supabase values and remain absent if missing',
+    () {
+      final attendance = AttendanceRecord.fromMap({
+        'id': 'a-1',
+        'class_id': 'c-1',
+        'student_id': 'u-2',
+        'attendance_date': '2026-11-26',
+        'status': 'present',
+      });
+      final score = ScoreRecord.fromMap({
+        'id': 's-1',
+        'class_id': 'c-1',
+        'student_id': 'u-2',
+        'created_at': '2026-11-25T08:00:00Z',
+        'updated_at': '2026-11-26T08:00:00Z',
+      });
+      final undatedAttendance = AttendanceRecord.fromMap({
+        'id': 'a-2',
+        'class_id': 'c-1',
+        'student_id': 'u-2',
+      });
+      final undatedScore = ScoreRecord.fromMap({
+        'id': 's-2',
+        'class_id': 'c-1',
+        'student_id': 'u-2',
+      });
+
+      expect(attendance.attendanceDate, DateTime(2026, 11, 26));
+      expect(score.updatedAt, DateTime.utc(2026, 11, 26, 8));
+      expect(undatedAttendance.attendanceDate, isNull);
+      expect(undatedScore.createdAt, isNull);
+    },
+  );
+
+  test('attendance sessions are matched to the selected meeting key', () {
+    final meetingOne = AttendanceSessionRecord(
+      id: 'session-one',
+      classId: 'class-1',
+      scheduleId: 'schedule-one',
+      meetingKey: 'schedule-one',
+      sessionDate: DateTime.utc(2026, 11, 26),
+    );
+    final meetingTwo = AttendanceSessionRecord(
+      id: 'session-two',
+      classId: 'class-1',
+      scheduleId: 'schedule-two',
+      meetingKey: 'schedule-two',
+      sessionDate: DateTime.utc(2026, 11, 26),
+    );
+
+    final selected = AcademicService.findAttendanceSessionForMeeting(
+      sessions: [meetingOne, meetingTwo],
+      meetingKey: 'schedule-two',
+      scheduleId: 'schedule-two',
+      hasSingleScheduledMeeting: false,
+    );
+    final unrelated = AcademicService.findAttendanceSessionForMeeting(
+      sessions: [meetingOne, meetingTwo],
+      meetingKey: 'schedule-three',
+      scheduleId: 'schedule-three',
+      hasSingleScheduledMeeting: false,
+    );
+
+    expect(selected?.id, 'session-two');
+    expect(unrelated, isNull);
+  });
+
+  test('legacy session is only matched when the date has one meeting', () {
+    final legacySession = AttendanceSessionRecord(
+      id: 'legacy-session',
+      classId: 'class-1',
+      sessionDate: DateTime.utc(2026, 11, 26),
+    );
+
+    expect(
+      AcademicService.findAttendanceSessionForMeeting(
+        sessions: [legacySession],
+        meetingKey: 'schedule-one',
+        scheduleId: 'schedule-one',
+        hasSingleScheduledMeeting: true,
+      )?.id,
+      'legacy-session',
+    );
+    expect(
+      AcademicService.findAttendanceSessionForMeeting(
+        sessions: [legacySession],
+        meetingKey: 'schedule-one',
+        scheduleId: 'schedule-one',
+        hasSingleScheduledMeeting: false,
+      ),
+      isNull,
+    );
+  });
+
   test('StudentNotificationRecord tracks unread state', () {
     final unread = StudentNotificationRecord(
       id: 'n-1',

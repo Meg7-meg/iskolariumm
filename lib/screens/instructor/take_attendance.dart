@@ -18,6 +18,9 @@ class InstructorAttendanceScreen extends StatefulWidget {
   final String? scheduleId;
   final String? meetingKey;
   final String? meetingLabel;
+  final bool correctionMode;
+  final DateTime? correctionDate;
+  final String? correctionSessionId;
 
   const InstructorAttendanceScreen({
     super.key,
@@ -25,6 +28,9 @@ class InstructorAttendanceScreen extends StatefulWidget {
     this.scheduleId,
     this.meetingKey,
     this.meetingLabel,
+    this.correctionMode = false,
+    this.correctionDate,
+    this.correctionSessionId,
   });
 
   @override
@@ -34,11 +40,23 @@ class InstructorAttendanceScreen extends StatefulWidget {
 
 class _InstructorAttendanceScreenState
     extends State<InstructorAttendanceScreen> {
-  DateTime selectedDate = DateTime.now();
+  late DateTime selectedDate;
 
   final List<Map<String, dynamic>> students = [];
+  final TextEditingController _correctionReasonController =
+      TextEditingController();
+  List<ClassMeetingSchedule> _schedules = const [];
+  ClassMeetingSchedule? _selectedSchedule;
+  AttendanceSessionRecord? _existingSession;
+  late Future<_AttendanceHistoryData> _attendanceHistoryFuture;
+  final Map<String, Future<List<AttendanceRecord>>> _historyDetailsFutures = {};
+  final Set<String> _expandedHistorySessionIds = {};
   bool _isLoading = true;
   String? _loadError;
+  String? _availabilityMessage;
+  String? _sessionStorageError;
+  bool _isAvailable = false;
+  bool _isSavedCurrentSession = false;
 
   // ============================================================
   // LIFECYCLE
@@ -47,12 +65,62 @@ class _InstructorAttendanceScreenState
   @override
   void initState() {
     super.initState();
+    final date = widget.correctionDate ?? AcademicService.manilaToday;
+    selectedDate = DateTime.utc(date.year, date.month, date.day);
+    _attendanceHistoryFuture = _loadAttendanceHistory();
     _loadStudentsAndAttendance();
+  }
+
+  @override
+  void dispose() {
+    _correctionReasonController.dispose();
+    super.dispose();
   }
 
   // ============================================================
   // DATA LOADING
   // ============================================================
+
+  Future<_AttendanceHistoryData> _loadAttendanceHistory() async {
+    final classId = widget.classItem['id'];
+    if (classId == null || classId.isEmpty) {
+      throw Exception('Missing class ID.');
+    }
+
+    final loadedSessions = await AcademicService.getClassAttendanceSessions(
+      classId,
+    );
+    final today = AcademicService.manilaToday;
+    final sessions = loadedSessions
+        .where(
+          (session) =>
+              session.sessionDate.year != today.year ||
+              session.sessionDate.month != today.month ||
+              session.sessionDate.day != today.day,
+        )
+        .toList(growable: false);
+    final summaries = await AcademicService.getAttendanceSessionSummaries(
+      classId: classId,
+      sessionIds: sessions.map((session) => session.id).toList(),
+    );
+    return _AttendanceHistoryData(sessions: sessions, summaries: summaries);
+  }
+
+  Future<void> _refreshAttendanceHistory() async {
+    setState(() {
+      _attendanceHistoryFuture = _loadAttendanceHistory();
+      _historyDetailsFutures.clear();
+    });
+    try {
+      await _attendanceHistoryFuture;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(formatAttendanceSessionsError(error))),
+        );
+      }
+    }
+  }
 
   Future<void> _loadStudentsAndAttendance() async {
     final classId = widget.classItem['id'];
@@ -64,43 +132,195 @@ class _InstructorAttendanceScreenState
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-      _loadError = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+        _availabilityMessage = null;
+        _sessionStorageError = null;
+        _isAvailable = false;
+        _isSavedCurrentSession = false;
+      });
+    }
 
     try {
-      final enrollments = await ClassService.getClassEnrollments(classId);
-      final approved =
-          enrollments.where((e) => e.status == 'approved').toList();
-      final existing = await AcademicService.getClassAttendance(
-        classId: classId,
-        date: selectedDate,
-        meetingKey: widget.meetingKey,
+      final schedules = await ClassService.getClassSchedulesForAttendance(
+        classId,
       );
-
-      final statusByStudent = <String, String>{};
-      for (final record in existing) {
-        final s = record.status;
-        statusByStudent[record.studentId] =
-            '${s[0].toUpperCase()}${s.substring(1)}';
+      final dateSchedules = schedules
+          .where((schedule) => schedule.weekday == selectedDate.weekday)
+          .toList();
+      ClassMeetingSchedule? selectedSchedule;
+      if (widget.scheduleId != null) {
+        for (final schedule in dateSchedules) {
+          if (schedule.id == widget.scheduleId) {
+            selectedSchedule = schedule;
+            break;
+          }
+        }
+      } else if (_selectedSchedule?.id != null) {
+        for (final schedule in dateSchedules) {
+          if (schedule.id == _selectedSchedule!.id) {
+            selectedSchedule = schedule;
+            break;
+          }
+        }
       }
+      selectedSchedule ??= dateSchedules.isEmpty ? null : dateSchedules.first;
+
+      final isToday =
+          selectedDate.year == AcademicService.manilaToday.year &&
+          selectedDate.month == AcademicService.manilaToday.month &&
+          selectedDate.day == AcademicService.manilaToday.day;
+      final isExistingSessionCorrection =
+          widget.correctionMode && widget.correctionSessionId != null;
+      if (!isExistingSessionCorrection &&
+          (dateSchedules.isEmpty ||
+              (widget.scheduleId != null && selectedSchedule?.id == null))) {
+        if (!mounted) return;
+        setState(() {
+          _schedules = schedules;
+          _selectedSchedule = null;
+          _isLoading = false;
+          _availabilityMessage = schedules.isEmpty
+              ? 'No weekly class schedule is available. Attendance cannot be taken until a schedule is recorded.'
+              : 'Attendance is unavailable on this date because the class has no scheduled meeting.'
+                    '${_nextMeetingMessage(schedules)}';
+        });
+        return;
+      }
+
+      if (!widget.correctionMode && !isToday) {
+        if (!mounted) return;
+        setState(() {
+          _schedules = schedules;
+          _selectedSchedule = selectedSchedule;
+          _isLoading = false;
+          _availabilityMessage =
+              'Regular attendance can only be taken for today in Manila time.';
+        });
+        return;
+      }
+
+      if (widget.correctionMode &&
+          widget.correctionSessionId == null &&
+          !selectedDate.isBefore(AcademicService.manilaToday)) {
+        if (!mounted) return;
+        setState(() {
+          _schedules = schedules;
+          _selectedSchedule = selectedSchedule;
+          _isLoading = false;
+          _availabilityMessage = 'Choose a past scheduled meeting date to record a missed meeting.';
+        });
+        return;
+      }
+
+      List<AttendanceSessionRecord> sessions = const [];
+      String? sessionStorageError;
+      try {
+        sessions = await AcademicService.getClassAttendanceSessionsOn(
+          classId,
+          selectedDate,
+        );
+      } catch (error) {
+        if (!isMissingSupabaseTable(error, 'attendance_sessions')) rethrow;
+        sessionStorageError = formatAttendanceSessionsError(error);
+      }
+
+      if (sessionStorageError != null && widget.correctionMode) {
+        if (!mounted) return;
+        setState(() {
+          _schedules = schedules;
+          _selectedSchedule = selectedSchedule;
+          _availabilityMessage = sessionStorageError;
+          _sessionStorageError = sessionStorageError;
+          _isLoading = false;
+        });
+        return;
+      }
+
+      AttendanceSessionRecord? existingSession;
+      if (widget.correctionSessionId != null) {
+        for (final session in sessions) {
+          if (session.id == widget.correctionSessionId) {
+            existingSession = session;
+            break;
+          }
+        }
+        if (existingSession == null) {
+          throw Exception('The selected attendance session was not found.');
+        }
+      } else {
+        final scheduleId = selectedSchedule?.id ?? widget.scheduleId;
+        final meetingKey = widget.meetingKey?.trim().isNotEmpty == true
+            ? widget.meetingKey!.trim()
+            : (scheduleId ?? '').trim();
+        existingSession = AcademicService.findAttendanceSessionForMeeting(
+          sessions: sessions,
+          meetingKey: meetingKey,
+          scheduleId: scheduleId,
+          hasSingleScheduledMeeting: dateSchedules.length == 1,
+        );
+      }
+
+      if (widget.correctionMode &&
+          widget.correctionSessionId == null &&
+          existingSession != null) {
+        if (!mounted) return;
+        setState(() {
+          _schedules = schedules;
+          _selectedSchedule = selectedSchedule;
+          _existingSession = existingSession;
+          _isLoading = false;
+          _availabilityMessage = 'An attendance session already exists for this date. Open it from Attendance History to make an audited correction.';
+        });
+        return;
+      }
+
+      final approved = existingSession == null
+          ? (await ClassService.getClassEnrollments(classId))
+                .where((enrollment) => enrollment.status == 'approved')
+                .toList()
+          : const [];
+      final existingRecords = existingSession == null
+          ? const <AttendanceRecord>[]
+          : await AcademicService.getAttendanceSessionRecords(
+              existingSession.id,
+            );
+      final roster = existingSession == null
+          ? approved.map((enrollment) {
+              return {
+                'name': enrollment.studentName,
+                'id': enrollment.studentId,
+                'email': enrollment.studentEmail,
+                'status': null,
+                'remarks': '',
+              };
+            }).toList()
+          : existingRecords.map((record) {
+              return {
+                'name': record.studentName,
+                'id': record.studentId,
+                'email': '',
+                'status': _displayStatus(record.status),
+                'remarks': record.remarks,
+              };
+            }).toList();
 
       if (!mounted) return;
       setState(() {
+        _schedules = schedules;
+        _selectedSchedule = selectedSchedule;
+        _existingSession = existingSession;
+        _sessionStorageError = sessionStorageError;
+        _isSavedCurrentSession =
+            !widget.correctionMode && existingSession != null;
         students
           ..clear()
-          ..addAll(
-            approved.map(
-              (e) => {
-                'name': e.studentName,
-                'id': e.studentId,
-                'email': e.studentEmail,
-                'status': statusByStudent[e.studentId],
-              },
-            ),
-          );
+          ..addAll(roster);
         _isLoading = false;
+        _isAvailable = true;
+        _availabilityMessage = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -111,55 +331,90 @@ class _InstructorAttendanceScreenState
     }
   }
 
-  // ============================================================
-  // COMPUTED COUNTS
-  // ============================================================
-
-  int get presentCount =>
-      students.where((s) => s['status'] == 'Present').length;
-
-  int get absentCount =>
-      students.where((s) => s['status'] == 'Absent').length;
-
-  int get lateCount =>
-      students.where((s) => s['status'] == 'Late').length;
-
-  int get excusedCount =>
-      students.where((s) => s['status'] == 'Excused').length;
-
-  int get unmarkedCount =>
-      students.where((s) => s['status'] == null).length;
-
-  int get totalStudents => students.length;
-
-  String get formattedDate {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${months[selectedDate.month - 1]} '
-        '${selectedDate.day}, ${selectedDate.year}';
+  String _displayStatus(String status) {
+    if (status.isEmpty) return status;
+    return '${status[0].toUpperCase()}${status.substring(1).toLowerCase()}';
   }
 
-  // ============================================================
-  // DATE PICKER
-  // ============================================================
+  String _nextMeetingMessage(List<ClassMeetingSchedule> schedules) {
+    final today = AcademicService.manilaToday;
+    for (var offset = 1; offset <= 7; offset++) {
+      final date = today.add(Duration(days: offset));
+      final meetings = schedules
+          .where((schedule) => schedule.weekday == date.weekday)
+          .toList();
+      if (meetings.isNotEmpty) {
+        return ' Next scheduled meeting: ${_formatDate(date)} (${meetings.first.formattedTimeRange}).';
+      }
+    }
+    return '';
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
 
   Future<void> selectClassDate() async {
+    if (!widget.correctionMode ||
+        widget.correctionSessionId != null ||
+        _schedules.isEmpty) {
+      return;
+    }
+    final today = AcademicService.manilaToday;
+    DateTime? nearestPastScheduledDate;
+    for (var offset = 1; offset <= 366; offset++) {
+      final candidate = today.subtract(Duration(days: offset));
+      if (_schedules.any((schedule) => schedule.weekday == candidate.weekday)) {
+        nearestPastScheduledDate = candidate;
+        break;
+      }
+    }
+    if (nearestPastScheduledDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No past scheduled meeting date was found.'),
+        ),
+      );
+      return;
+    }
+
+    final initialDate =
+        selectedDate.isBefore(today) &&
+            _schedules.any(
+              (schedule) => schedule.weekday == selectedDate.weekday,
+            )
+        ? selectedDate
+        : nearestPastScheduledDate;
     final pickedDate = await showDatePicker(
       context: context,
-      initialDate: selectedDate,
+      initialDate: initialDate,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
+      lastDate: today.subtract(const Duration(days: 1)),
+      selectableDayPredicate: (date) =>
+          _schedules.any((schedule) => schedule.weekday == date.weekday),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: Theme.of(context).colorScheme.copyWith(
-                  primary: AppColors.primary,
-                  onPrimary: AppColors.textOnPrimary,
-                  surface: AppColors.surface,
-                  onSurface: AppColors.textPrimary,
-                ),
+              primary: AppColors.primary,
+              onPrimary: AppColors.textOnPrimary,
+              surface: AppColors.surface,
+              onSurface: AppColors.textPrimary,
+            ),
             dialogTheme: const DialogThemeData(
               backgroundColor: AppColors.surface,
             ),
@@ -171,17 +426,46 @@ class _InstructorAttendanceScreenState
 
     if (pickedDate != null) {
       setState(() {
-        selectedDate = pickedDate;
+        selectedDate = DateTime.utc(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+        );
+        students.clear();
+        _existingSession = null;
       });
       await _loadStudentsAndAttendance();
     }
   }
+
+  String get formattedDate {
+    return _formatDate(selectedDate);
+  }
+
+  // ============================================================
+  // COMPUTED COUNTS
+  // ============================================================
+
+  int get presentCount =>
+      students.where((s) => s['status'] == 'Present').length;
+
+  int get absentCount => students.where((s) => s['status'] == 'Absent').length;
+
+  int get lateCount => students.where((s) => s['status'] == 'Late').length;
+
+  int get excusedCount =>
+      students.where((s) => s['status'] == 'Excused').length;
+
+  int get unmarkedCount => students.where((s) => s['status'] == null).length;
+
+  int get totalStudents => students.length;
 
   // ============================================================
   // MARK ATTENDANCE
   // ============================================================
 
   void updateAttendance(int index, String status) {
+    if (_sessionStorageError != null) return;
     setState(() {
       students[index]['status'] = status;
     });
@@ -192,20 +476,46 @@ class _InstructorAttendanceScreenState
   // ============================================================
 
   Future<void> reviewAttendance() async {
-    if (unmarkedCount > 0) return;
+    if (!_isAvailable ||
+        _sessionStorageError != null ||
+        (_isSavedCurrentSession && !widget.correctionMode) ||
+        unmarkedCount > 0 ||
+        (widget.correctionMode &&
+            _correctionReasonController.text.trim().isEmpty)) {
+      return;
+    }
+
+    final selectedSchedule = _selectedSchedule;
+    final scheduleId =
+        _existingSession?.scheduleId ??
+        selectedSchedule?.id ??
+        widget.scheduleId;
+    final meetingKey =
+        _existingSession?.meetingKey ??
+        widget.meetingKey ??
+        selectedSchedule?.id ??
+        '';
+    final meetingLabel =
+        _existingSession?.meetingLabel ??
+        widget.meetingLabel ??
+        selectedSchedule?.formattedSummary ??
+        '';
+    final room = _existingSession?.room ?? selectedSchedule?.room ?? '';
 
     final saved = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => InstructorReviewAttendanceScreen(
           classItem: widget.classItem,
-          students: students
-              .map((s) => Map<String, dynamic>.from(s))
-              .toList(),
+          students: students.map((s) => Map<String, dynamic>.from(s)).toList(),
           selectedDate: selectedDate,
-          scheduleId: widget.scheduleId,
-          meetingKey: widget.meetingKey,
-          meetingLabel: widget.meetingLabel,
+          scheduleId: scheduleId,
+          meetingKey: meetingKey,
+          meetingLabel: meetingLabel,
+          room: room,
+          correctionMode: widget.correctionMode,
+          correctionSessionId: _existingSession?.id,
+          correctionReason: _correctionReasonController.text.trim(),
         ),
       ),
     );
@@ -257,6 +567,9 @@ class _InstructorAttendanceScreenState
     final student = students[index];
     final String? status = student['status'];
     final bool isUnmarked = status == null;
+    final bool isReadOnly =
+        (_isSavedCurrentSession && !widget.correctionMode) ||
+        _sessionStorageError != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -331,37 +644,67 @@ class _InstructorAttendanceScreenState
               ],
             ),
 
-            const SizedBox(height: 12),
-
-            // — Action buttons row —
-            Row(
-              children: [
-                // Present button
-                Expanded(
-                  child: _buildPrimaryButton(
-                    label: 'Present',
-                    isSelected: status == 'Present',
-                    onTap: () => updateAttendance(index, 'Present'),
+            if (isReadOnly) ...[
+              if ((student['remarks'] as String? ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Remark: ${student['remarks']}',
+                    style: AppTextStyles.bodySmall,
                   ),
                 ),
-
-                const SizedBox(width: 8),
-
-                // Absent button
-                Expanded(
-                  child: _buildSecondaryButton(
-                    label: 'Absent',
-                    isSelected: status == 'Absent',
-                    onTap: () => updateAttendance(index, 'Absent'),
-                  ),
-                ),
-
-                const SizedBox(width: 8),
-
-                // More options (Late / Excused)
-                _buildMoreButton(index, status),
               ],
-            ),
+            ] else ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildPrimaryButton(
+                      label: 'Present',
+                      isSelected: status == 'Present',
+                      onTap: () => updateAttendance(index, 'Present'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildSecondaryButton(
+                      label: 'Absent',
+                      isSelected: status == 'Absent',
+                      onTap: () => updateAttendance(index, 'Absent'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildMoreButton(index, status),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: ValueKey('attendance-remark-${student['id']}'),
+                initialValue: student['remarks'] as String? ?? '',
+                maxLines: 2,
+                minLines: 1,
+                onChanged: (value) => student['remarks'] = value,
+                decoration: InputDecoration(
+                  hintText: 'Optional remark',
+                  isDense: true,
+                  filled: true,
+                  fillColor: AppColors.background,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -572,9 +915,7 @@ class _InstructorAttendanceScreenState
           child: Icon(
             LucideIcons.moreHorizontal,
             size: 16,
-            color: isMoreSelected
-                ? AppColors.primary
-                : AppColors.textSecondary,
+            color: isMoreSelected ? AppColors.primary : AppColors.textSecondary,
           ),
         ),
       ),
@@ -683,8 +1024,9 @@ class _InstructorAttendanceScreenState
                     : 0.0,
                 minHeight: 4,
                 backgroundColor: AppColors.border,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  AppColors.primary,
+                ),
               ),
             ),
             const SizedBox(height: 6),
@@ -752,8 +1094,9 @@ class _InstructorAttendanceScreenState
         color: allMarked ? AppColors.primaryLight : AppColors.warningLight,
         borderRadius: BorderRadius.circular(AppRadii.lg),
         border: Border.all(
-          color:
-              allMarked ? AppColors.primary.withValues(alpha: 0.2) : AppColors.warningBorder,
+          color: allMarked
+              ? AppColors.primary.withValues(alpha: 0.2)
+              : AppColors.warningBorder,
         ),
       ),
       child: Row(
@@ -782,6 +1125,297 @@ class _InstructorAttendanceScreenState
     );
   }
 
+  Widget _buildAvailabilityPanel() {
+    return SurfacePanel(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            LucideIcons.calendarX2,
+            size: 20,
+            color: AppColors.warningDark,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _availabilityMessage ?? 'Attendance is unavailable.',
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _historyMeetingLabel(AttendanceSessionRecord session) {
+    final savedLabel = session.meetingLabel.trim();
+    if (savedLabel.isNotEmpty) return savedLabel;
+
+    for (final schedule in _schedules) {
+      if (session.scheduleId != null && schedule.id == session.scheduleId) {
+        return schedule.formattedSummary;
+      }
+    }
+    for (final schedule in _schedules) {
+      if (schedule.weekday == session.sessionDate.weekday) {
+        return schedule.formattedSummary;
+      }
+    }
+    return 'Scheduled meeting';
+  }
+
+  String _historyStatusSummary(Map<String, int>? summary) {
+    const labels = {
+      'present': 'Present',
+      'absent': 'Absent',
+      'late': 'Late',
+      'excused': 'Excused',
+    };
+    final parts = <String>[];
+    for (final entry in labels.entries) {
+      final count = summary?[entry.key] ?? 0;
+      if (count > 0) parts.add('${entry.value} $count');
+    }
+    return parts.isEmpty ? 'No student records' : parts.join(' · ');
+  }
+
+  Future<void> _openHistoricalCorrection(
+    AttendanceSessionRecord session,
+  ) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InstructorAttendanceScreen(
+          classItem: widget.classItem,
+          correctionMode: true,
+          correctionDate: session.sessionDate,
+          correctionSessionId: session.id,
+          scheduleId: session.scheduleId,
+          meetingKey: session.meetingKey,
+          meetingLabel: session.meetingLabel,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      await _loadStudentsAndAttendance();
+      await _refreshAttendanceHistory();
+    }
+  }
+
+  Widget _buildAttendanceHistorySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Attendance History', style: AppTextStyles.sectionHeading),
+        const SizedBox(height: 8),
+        Text(
+          'Previously recorded meetings for this class.',
+          style: AppTextStyles.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        FutureBuilder<_AttendanceHistoryData>(
+          future: _attendanceHistoryFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
+                  ),
+                ),
+              );
+            }
+            if (snapshot.hasError) {
+              return AsyncErrorView(
+                message: formatAttendanceSessionsError(snapshot.error!),
+                onRetry: _refreshAttendanceHistory,
+              );
+            }
+
+            final history = snapshot.data!;
+            if (history.sessions.isEmpty) {
+              return const EmptyStateView(
+                icon: LucideIcons.calendarClock,
+                title: 'No attendance history',
+                message:
+                    'Saved attendance from previous meetings will appear here.',
+              );
+            }
+
+            return Column(
+              children: history.sessions
+                  .map(
+                    (session) => _buildHistorySessionCard(
+                      session,
+                      history.summaries[session.id],
+                    ),
+                  )
+                  .toList(growable: false),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHistorySessionCard(
+    AttendanceSessionRecord session,
+    Map<String, int>? summary,
+  ) {
+    final isExpanded = _expandedHistorySessionIds.contains(session.id);
+    final detailsFuture = isExpanded
+        ? _historyDetailsFutures.putIfAbsent(
+            session.id,
+            () => AcademicService.getAttendanceSessionRecords(session.id),
+          )
+        : null;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: AppColors.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: ExpansionTile(
+        key: PageStorageKey<String>('attendance-history-${session.id}'),
+        leading: const Icon(
+          LucideIcons.calendarCheck,
+          color: AppColors.primary,
+          size: 19,
+        ),
+        title: Text(
+          _formatDate(session.sessionDate),
+          style: AppTextStyles.cardHeading,
+        ),
+        subtitle: Text(
+          '${_historyMeetingLabel(session)}\n'
+          '${_historyStatusSummary(summary)}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.meta,
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        onExpansionChanged: (expanded) {
+          setState(() {
+            if (expanded) {
+              _expandedHistorySessionIds.add(session.id);
+            } else {
+              _expandedHistorySessionIds.remove(session.id);
+            }
+          });
+        },
+        children: detailsFuture == null
+            ? const []
+            : [
+                FutureBuilder<List<AttendanceRecord>>(
+                  future: detailsFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return AsyncErrorView(
+                        message: formatSupabaseError(snapshot.error!),
+                        onRetry: () {
+                          setState(() {
+                            _historyDetailsFutures[session.id] =
+                                AcademicService.getAttendanceSessionRecords(
+                                  session.id,
+                                );
+                          });
+                        },
+                      );
+                    }
+
+                    final records = snapshot.data ?? const [];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SurfacePanel(
+                          padding: const EdgeInsets.all(12),
+                          child: const Row(
+                            children: [
+                              Icon(
+                                LucideIcons.eye,
+                                color: AppColors.primary,
+                                size: 16,
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Viewing a past meeting · Read-only',
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (records.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'No student records were found for this session.',
+                              style: AppTextStyles.bodySmall,
+                            ),
+                          )
+                        else
+                          ...records.map(_buildHistoryRecord),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _openHistoricalCorrection(session),
+                            icon: const Icon(LucideIcons.filePenLine, size: 16),
+                            label: const Text('Correct this session'),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryRecord(AttendanceRecord record) {
+    final status = _displayStatus(record.status);
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(record.studentName, style: AppTextStyles.cardHeading),
+      subtitle: record.remarks.trim().isEmpty
+          ? Text(record.studentId, style: AppTextStyles.meta)
+          : Text('${record.studentId} · ${record.remarks}'),
+      trailing: StatusBadge(
+        label: status,
+        color: _statusFg(status),
+        backgroundColor: _statusBg(status),
+      ),
+    );
+  }
+
   // ============================================================
   // BUILD
   // ============================================================
@@ -789,6 +1423,17 @@ class _InstructorAttendanceScreenState
   @override
   Widget build(BuildContext context) {
     final bool allMarked = students.isNotEmpty && unmarkedCount == 0;
+    final bool isReadOnlyCurrentSession =
+        _isSavedCurrentSession && !widget.correctionMode;
+    final isMissedMeetingCorrection =
+        widget.correctionMode && widget.correctionSessionId == null;
+    final savedMeetingLabel = _existingSession?.meetingLabel.trim() ?? '';
+    final providedMeetingLabel = widget.meetingLabel?.trim() ?? '';
+    final meetingLabel = savedMeetingLabel.isNotEmpty
+        ? savedMeetingLabel
+        : providedMeetingLabel.isNotEmpty
+        ? providedMeetingLabel
+        : _selectedSchedule?.formattedSummary;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -803,8 +1448,12 @@ class _InstructorAttendanceScreenState
                 // Page header
                 AcademicPageHeader(
                   eyebrow: 'Instructor · Attendance',
-                  title: 'Take Attendance',
-                  subtitle: 'Draft — not yet saved to records',
+                  title: widget.correctionMode
+                      ? 'Attendance Correction'
+                      : 'Attendance',
+                  subtitle: widget.correctionMode
+                      ? 'Authorized correction · audit reason required'
+                      : 'Record attendance for today’s scheduled meeting',
                   onBack: () => Navigator.pop(context),
                 ),
 
@@ -840,11 +1489,11 @@ class _InstructorAttendanceScreenState
                               '${widget.classItem['code']} · ${widget.classItem['section']}',
                               style: AppTextStyles.meta,
                             ),
-                            if (widget.meetingLabel != null &&
-                                widget.meetingLabel!.isNotEmpty) ...[
+                            if (meetingLabel != null &&
+                                meetingLabel.isNotEmpty) ...[
                               const SizedBox(height: 3),
                               Text(
-                                widget.meetingLabel!,
+                                meetingLabel,
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -856,7 +1505,8 @@ class _InstructorAttendanceScreenState
                         ),
                       ),
                       StatusBadge(
-                        label: widget.classItem['students'] ??
+                        label:
+                            widget.classItem['students'] ??
                             '$totalStudents students',
                         color: AppColors.primary,
                         backgroundColor: AppColors.primaryLight,
@@ -868,9 +1518,10 @@ class _InstructorAttendanceScreenState
 
                 const SizedBox(height: 20),
 
-                // CLASS DATE SELECTOR
                 Text(
-                  'Class date',
+                  isMissedMeetingCorrection
+                      ? 'Past meeting date'
+                      : 'Meeting date',
                   style: AppTextStyles.sectionHeading,
                 ),
 
@@ -880,7 +1531,7 @@ class _InstructorAttendanceScreenState
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(AppRadii.lg),
                   child: InkWell(
-                    onTap: selectClassDate,
+                    onTap: isMissedMeetingCorrection ? selectClassDate : null,
                     borderRadius: BorderRadius.circular(AppRadii.lg),
                     child: Container(
                       height: 52,
@@ -899,7 +1550,7 @@ class _InstructorAttendanceScreenState
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              formattedDate,
+                              '$formattedDate · Manila time',
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -907,11 +1558,12 @@ class _InstructorAttendanceScreenState
                               ),
                             ),
                           ),
-                          const Icon(
-                            LucideIcons.chevronDown,
-                            color: AppColors.textSecondary,
-                            size: 16,
-                          ),
+                          if (isMissedMeetingCorrection)
+                            const Icon(
+                              LucideIcons.chevronDown,
+                              color: AppColors.textSecondary,
+                              size: 16,
+                            ),
                         ],
                       ),
                     ),
@@ -920,37 +1572,6 @@ class _InstructorAttendanceScreenState
 
                 const SizedBox(height: 20),
 
-                // ATTENDANCE SUMMARY STRIP
-                _buildSummaryStrip(),
-
-                const SizedBox(height: 24),
-
-                // STUDENT LIST HEADER
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Student attendance',
-                      style: AppTextStyles.sectionHeading,
-                    ),
-                    StatusBadge(
-                      label: '$totalStudents students',
-                      color: AppColors.primary,
-                      backgroundColor: AppColors.primaryLight,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  'Tap Present or Absent. Use ··· for Late or Excused.',
-                  style: AppTextStyles.bodySmall,
-                ),
-
-                const SizedBox(height: 14),
-
-                // STUDENT CARDS
                 if (_isLoading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 32),
@@ -966,68 +1587,193 @@ class _InstructorAttendanceScreenState
                     message: _loadError!,
                     onRetry: _loadStudentsAndAttendance,
                   )
-                else if (students.isEmpty)
-                  const EmptyStateView(
-                    icon: LucideIcons.users,
-                    title: 'No students enrolled',
-                    message:
-                        'No approved students found for this class.',
-                  )
-                else
-                  ...List.generate(
-                    students.length,
-                    (i) => _buildStudentCard(i),
-                  ),
-
-                const SizedBox(height: 16),
-
-                // COMPLETION BANNER
-                _buildCompletionBanner(allMarked),
-
-                const SizedBox(height: 16),
-
-                // REVIEW BUTTON
-                SizedBox(
-                  height: 52,
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: allMarked ? reviewAttendance : null,
-                    icon: Icon(
-                      allMarked
-                          ? LucideIcons.clipboardCheck
-                          : LucideIcons.lock,
-                      size: 17,
-                    ),
-                    label: Text(
-                      allMarked
-                          ? 'Review attendance'
-                          : 'Review attendance · $unmarkedCount unmarked',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                else if (!_isAvailable)
+                  _buildAvailabilityPanel()
+                else ...[
+                  if (_sessionStorageError != null) ...[
+                    SurfacePanel(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            LucideIcons.circleAlert,
+                            color: AppColors.warningDark,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _sessionStorageError!,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 12,
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.navy,
-                      disabledBackgroundColor: AppColors.surfaceSoft,
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: AppColors.textSecondary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadii.lg),
+                    const SizedBox(height: 14),
+                  ],
+                  if (students.isEmpty)
+                    const EmptyStateView(
+                      icon: LucideIcons.users,
+                      title: 'No students enrolled',
+                      message:
+                          'No approved students are enrolled in this course.',
+                    )
+                  else ...[
+                    if (isReadOnlyCurrentSession) ...[
+                      SurfacePanel(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(
+                                  LucideIcons.circleCheck,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Attendance is saved for this meeting. These records are read-only.',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 12,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_existingSession != null) ...[
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton.icon(
+                                  onPressed: () => _openHistoricalCorrection(
+                                    _existingSession!,
+                                  ),
+                                  icon: const Icon(
+                                    LucideIcons.filePenLine,
+                                    size: 15,
+                                  ),
+                                  label: const Text('Correct attendance'),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (widget.correctionMode) ...[
+                      TextFormField(
+                        controller: _correctionReasonController,
+                        maxLines: 2,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Correction reason',
+                          hintText: 'Explain why these records need correction',
+                          prefixIcon: Icon(LucideIcons.filePenLine),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    _buildSummaryStrip(),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isReadOnlyCurrentSession
+                              ? 'Saved student attendance'
+                              : 'Student attendance',
+                          style: AppTextStyles.sectionHeading,
+                        ),
+                        StatusBadge(
+                          label: '$totalStudents students',
+                          color: AppColors.primary,
+                          backgroundColor: AppColors.primaryLight,
+                        ),
+                      ],
                     ),
-                  ),
-                ),
+                    const SizedBox(height: 4),
+                    if (!isReadOnlyCurrentSession) ...[
+                      Text(
+                        'Tap Present or Absent. Use ··· for Late or Excused.',
+                        style: AppTextStyles.bodySmall,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    ...List.generate(
+                      students.length,
+                      (i) => _buildStudentCard(i),
+                    ),
+                    if (!isReadOnlyCurrentSession) ...[
+                      const SizedBox(height: 16),
+                      _buildCompletionBanner(allMarked),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 52,
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _sessionStorageError == null &&
+                                  allMarked &&
+                                  (!widget.correctionMode ||
+                                      _correctionReasonController.text
+                                          .trim()
+                                          .isNotEmpty)
+                              ? reviewAttendance
+                              : null,
+                          icon: Icon(
+                            allMarked
+                                ? LucideIcons.clipboardCheck
+                                : LucideIcons.lock,
+                            size: 17,
+                          ),
+                          label: Text(
+                            widget.correctionMode
+                                ? 'Review correction'
+                                : 'Review attendance',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.navy,
+                            disabledBackgroundColor: AppColors.surfaceSoft,
+                            foregroundColor: Colors.white,
+                            disabledForegroundColor: AppColors.textSecondary,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppRadii.lg),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: Text(
+                          widget.correctionMode
+                              ? 'Changes are saved with the correction reason.'
+                              : 'Attendance is not saved until you confirm.',
+                          style: AppTextStyles.meta,
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
 
-                const SizedBox(height: 12),
-
-                Center(
-                  child: Text(
-                    'Attendance is a draft. Review before confirming.',
-                    style: AppTextStyles.meta,
-                  ),
-                ),
+                const SizedBox(height: 28),
+                _buildAttendanceHistorySection(),
               ],
             ),
           ),
@@ -1035,4 +1781,14 @@ class _InstructorAttendanceScreenState
       ),
     );
   }
+}
+
+class _AttendanceHistoryData {
+  final List<AttendanceSessionRecord> sessions;
+  final Map<String, Map<String, int>> summaries;
+
+  const _AttendanceHistoryData({
+    required this.sessions,
+    required this.summaries,
+  });
 }

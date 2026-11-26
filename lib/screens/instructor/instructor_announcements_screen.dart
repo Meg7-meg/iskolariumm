@@ -13,10 +13,7 @@ import '../../src/announcement_store.dart';
 class InstructorAnnouncementsPage extends StatefulWidget {
   final List<Map<String, String>> assignedClasses;
 
-  const InstructorAnnouncementsPage({
-    super.key,
-    required this.assignedClasses,
-  });
+  const InstructorAnnouncementsPage({super.key, required this.assignedClasses});
 
   @override
   State<InstructorAnnouncementsPage> createState() =>
@@ -49,6 +46,7 @@ class _InstructorAnnouncementsPageState
           records.map(
             (r) => AnnouncementItem(
               id: r.id,
+              classId: r.classId,
               title: r.title,
               message: r.content,
               classCode: r.subjectCode,
@@ -72,8 +70,7 @@ class _InstructorAnnouncementsPageState
     }
   }
 
-  List<Map<String, String>> get availableClasses =>
-      widget.assignedClasses;
+  List<Map<String, String>> get availableClasses => widget.assignedClasses;
 
   // ============================================================
   // HELPERS
@@ -93,9 +90,7 @@ class _InstructorAnnouncementsPageState
         content: Text(message),
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.navy,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(15),
       ),
     );
@@ -109,43 +104,26 @@ class _InstructorAnnouncementsPageState
   }) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(
-        color: AppColors.textMuted,
-        fontSize: 13,
-      ),
+      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
       prefixIcon: icon == null
           ? null
-          : Icon(
-              icon,
-              color: AppColors.primary,
-              size: 19,
-            ),
+          : Icon(icon, color: AppColors.primary, size: 19),
       alignLabelWithHint: alignLabelWithHint,
       counterText: counterMaxLength == null ? null : '',
       filled: true,
       fillColor: AppColors.surfaceSoft,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: AppColors.border,
-        ),
+        borderSide: const BorderSide(color: AppColors.border),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: AppColors.border,
-        ),
+        borderSide: const BorderSide(color: AppColors.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: AppColors.primary,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
     );
   }
@@ -154,12 +132,8 @@ class _InstructorAnnouncementsPageState
   // ANNOUNCEMENT FORM
   // ============================================================
 
-  void openAnnouncementForm({
-    AnnouncementItem? existing,
-  }) {
-    final titleController = TextEditingController(
-      text: existing?.title ?? '',
-    );
+  void openAnnouncementForm({AnnouncementItem? existing}) {
+    final titleController = TextEditingController(text: existing?.title ?? '');
 
     final messageController = TextEditingController(
       text: existing?.message ?? '',
@@ -170,6 +144,7 @@ class _InstructorAnnouncementsPageState
     if (existing != null) {
       final index = availableClasses.indexWhere(
         (item) =>
+            (item['id'] ?? '') == existing.classId &&
             item['code'] == existing.classCode &&
             item['section'] == existing.section,
       );
@@ -192,18 +167,8 @@ class _InstructorAnnouncementsPageState
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(22),
               ),
-              titlePadding: const EdgeInsets.fromLTRB(
-                22,
-                22,
-                22,
-                8,
-              ),
-              contentPadding: const EdgeInsets.fromLTRB(
-                22,
-                10,
-                22,
-                8,
-              ),
+              titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
+              contentPadding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
               title: Row(
                 children: [
                   Container(
@@ -275,15 +240,11 @@ class _InstructorAnnouncementsPageState
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(13),
-                          borderSide: const BorderSide(
-                            color: AppColors.border,
-                          ),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(13),
-                          borderSide: const BorderSide(
-                            color: AppColors.border,
-                          ),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(13),
@@ -293,25 +254,22 @@ class _InstructorAnnouncementsPageState
                           ),
                         ),
                       ),
-                      items: List.generate(
-                        availableClasses.length,
-                        (index) {
-                          final item = availableClasses[index];
+                      items: List.generate(availableClasses.length, (index) {
+                        final item = availableClasses[index];
 
-                          return DropdownMenuItem<String>(
-                            value: index.toString(),
-                            child: Text(
-                              '${item['code']} · ${item['section']}',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _navy,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
+                        return DropdownMenuItem<String>(
+                          value: index.toString(),
+                          child: Text(
+                            '${item['code']} · ${item['section']}',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _navy,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      }),
                       onChanged: (value) {
                         setDialogState(() {
                           selectedClass = value;
@@ -376,9 +334,7 @@ class _InstructorAnnouncementsPageState
                       decoration: BoxDecoration(
                         color: AppColors.infoLight,
                         borderRadius: BorderRadius.circular(11),
-                        border: Border.all(
-                          color: AppColors.infoBorder,
-                        ),
+                        border: Border.all(color: AppColors.infoBorder),
                       ),
                       child: const Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,12 +361,7 @@ class _InstructorAnnouncementsPageState
                   ],
                 ),
               ),
-              actionsPadding: const EdgeInsets.fromLTRB(
-                18,
-                5,
-                18,
-                18,
-              ),
+              actionsPadding: const EdgeInsets.fromLTRB(18, 5, 18, 18),
               actions: [
                 Row(
                   children: [
@@ -423,9 +374,7 @@ class _InstructorAnnouncementsPageState
                           },
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.textSecondary,
-                            side: const BorderSide(
-                              color: AppColors.border,
-                            ),
+                            side: const BorderSide(color: AppColors.border),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -448,11 +397,9 @@ class _InstructorAnnouncementsPageState
                         height: 46,
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            final title =
-                                titleController.text.trim();
+                            final title = titleController.text.trim();
 
-                            final message =
-                                messageController.text.trim();
+                            final message = messageController.text.trim();
 
                             if (title.isEmpty || message.isEmpty) {
                               showMessage(
@@ -462,14 +409,11 @@ class _InstructorAnnouncementsPageState
                             }
 
                             if (selectedClass == null) {
-                              showMessage(
-                                'Please select a class and section.',
-                              );
+                              showMessage('Please select a class and section.');
                               return;
                             }
 
-                            final index =
-                                int.tryParse(selectedClass!);
+                            final index = int.tryParse(selectedClass!);
 
                             if (index == null ||
                                 index < 0 ||
@@ -590,18 +534,9 @@ class _InstructorAnnouncementsPageState
           content: const Text(
             'This announcement will be removed from the announcement list.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _muted,
-              height: 1.5,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: _muted, height: 1.5, fontSize: 12),
           ),
-          actionsPadding: const EdgeInsets.fromLTRB(
-            18,
-            0,
-            18,
-            18,
-          ),
+          actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
           actions: [
             Row(
               children: [
@@ -612,9 +547,7 @@ class _InstructorAnnouncementsPageState
                     },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.textSecondary,
-                      side: const BorderSide(
-                        color: AppColors.border,
-                      ),
+                      side: const BorderSide(color: AppColors.border),
                     ),
                     child: const Text('Cancel'),
                   ),
@@ -642,9 +575,7 @@ class _InstructorAnnouncementsPageState
                     ),
                     child: const Text(
                       'Delete',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),
@@ -671,9 +602,7 @@ class _InstructorAnnouncementsPageState
           item.section.toLowerCase().contains(query);
     }).toList();
 
-    announcements.sort(
-      (a, b) => b.id.compareTo(a.id),
-    );
+    announcements.sort((a, b) => b.id.compareTo(a.id));
 
     return announcements;
   }
@@ -691,10 +620,7 @@ class _InstructorAnnouncementsPageState
       },
       decoration: InputDecoration(
         hintText: 'Search announcements...',
-        hintStyle: const TextStyle(
-          color: AppColors.textMuted,
-          fontSize: 13,
-        ),
+        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
         prefixIcon: const Icon(
           LucideIcons.search,
           color: AppColors.textSecondary,
@@ -722,22 +648,15 @@ class _InstructorAnnouncementsPageState
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.border,
-          ),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.border,
-          ),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppColors.primary,
-            width: 1.4,
-          ),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
         ),
       ),
     );
@@ -754,9 +673,7 @@ class _InstructorAnnouncementsPageState
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.border,
-        ),
+        border: Border.all(color: AppColors.border),
         boxShadow: [
           BoxShadow(
             color: AppColors.navy.withValues(alpha: 0.025),
@@ -900,10 +817,7 @@ class _InstructorAnnouncementsPageState
 
           const SizedBox(height: 15),
 
-          const Divider(
-            color: AppColors.divider,
-            height: 1,
-          ),
+          const Divider(color: AppColors.divider, height: 1),
 
           const SizedBox(height: 12),
 
@@ -976,9 +890,7 @@ class _InstructorAnnouncementsPageState
                 borderRadius: BorderRadius.circular(25),
               ),
               child: Icon(
-                isSearching
-                    ? LucideIcons.searchX
-                    : LucideIcons.megaphone,
+                isSearching ? LucideIcons.searchX : LucideIcons.megaphone,
                 color: AppColors.primary,
                 size: 34,
               ),
@@ -987,9 +899,7 @@ class _InstructorAnnouncementsPageState
             const SizedBox(height: 18),
 
             Text(
-              isSearching
-                  ? 'No results found'
-                  : 'No announcements yet',
+              isSearching ? 'No results found' : 'No announcements',
               style: const TextStyle(
                 color: _navy,
                 fontSize: 17,
@@ -1004,11 +914,7 @@ class _InstructorAnnouncementsPageState
                   ? 'Try searching with a different title, message, class, or section.'
                   : 'Create an announcement to share important updates with one of your assigned classes.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _muted,
-                fontSize: 12,
-                height: 1.6,
-              ),
+              style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
             ),
 
             if (!isSearching && availableClasses.isNotEmpty) ...[
@@ -1016,22 +922,14 @@ class _InstructorAnnouncementsPageState
 
               OutlinedButton.icon(
                 onPressed: () => openAnnouncementForm(),
-                icon: const Icon(
-                  LucideIcons.plus,
-                  size: 16,
-                ),
+                icon: const Icon(LucideIcons.plus, size: 16),
                 label: const Text(
                   'Create announcement',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
-                  side: const BorderSide(
-                    color: AppColors.primary,
-                  ),
+                  side: const BorderSide(color: AppColors.primary),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1058,12 +956,7 @@ class _InstructorAnnouncementsPageState
         children: [
           // TOP CONTROLS
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              17,
-              18,
-              17,
-              12,
-            ),
+            padding: const EdgeInsets.fromLTRB(17, 18, 17, 12),
             child: Column(
               children: [
                 // CREATE ANNOUNCEMENT BUTTON
@@ -1074,10 +967,7 @@ class _InstructorAnnouncementsPageState
                     onPressed: availableClasses.isEmpty
                         ? null
                         : () => openAnnouncementForm(),
-                    icon: const Icon(
-                      LucideIcons.plus,
-                      size: 19,
-                    ),
+                    icon: const Icon(LucideIcons.plus, size: 19),
                     label: const Text(
                       'Create announcement',
                       style: TextStyle(
@@ -1147,17 +1037,10 @@ class _InstructorAnnouncementsPageState
             child: announcements.isEmpty
                 ? buildEmptyState()
                 : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(
-                      17,
-                      5,
-                      17,
-                      25,
-                    ),
+                    padding: const EdgeInsets.fromLTRB(17, 5, 17, 25),
                     itemCount: announcements.length,
                     itemBuilder: (context, index) {
-                      return buildAnnouncementCard(
-                        announcements[index],
-                      );
+                      return buildAnnouncementCard(announcements[index]);
                     },
                   ),
           ),

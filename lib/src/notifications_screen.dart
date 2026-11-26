@@ -20,11 +20,56 @@ class NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<NotificationsPage> {
   String filter = 'All';
+  bool _isLoading = true;
+  String? _error;
 
-  final TextEditingController _searchController =
-      TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
+
+  Future<void> _openAnnouncementClass(String classId) async {
+    try {
+      final approved = await ClassService.getStudentApprovedClasses();
+      final record = approved.where((item) => item.id == classId).firstOrNull;
+      if (record == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This announcement class is not available.'),
+          ),
+        );
+        return;
+      }
+
+      final item = ClassItem(
+        id: record.id,
+        code: record.subjectCode.isEmpty ? 'CLASS' : record.subjectCode,
+        name: record.className,
+        instructor: record.instructorName,
+        location: record.roomSummary,
+        day: record.scheduleDay.isEmpty ? 'TBA' : record.scheduleDay,
+        time: record.scheduleTime.isEmpty ? 'TBA' : record.scheduleTime,
+        schedules: record.effectiveSchedules,
+        progress: 1.0,
+        section: record.section,
+        isOfficial: true,
+        enrollmentCode: record.enrollmentCode,
+        description: record.description,
+      );
+
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ClassDetailScreen(classItem: item, initialTab: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
+    }
+  }
 
   @override
   void initState() {
@@ -33,6 +78,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _loadNotifications() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
+
     try {
       final notifs = await OrganizerService.getNotifications();
       final announcements = await AcademicService.getStudentAnnouncements();
@@ -43,13 +95,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
           notifs.map(
             (n) => NoticeItem(
               id: n.id,
+              classId: n.classId,
+              announcementId: n.announcementId,
               title: n.title,
               message: n.message,
               time:
                   '${n.createdAt.month}/${n.createdAt.day}/${n.createdAt.year}',
               icon: n.category == 'Classes'
-                  ? Icons.campaign_outlined
-                  : Icons.notifications_outlined,
+                  ? LucideIcons.megaphone
+                  : LucideIcons.bell,
               category: n.category,
               unread: n.isUnread,
             ),
@@ -62,6 +116,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           announcements.map(
             (a) => AnnouncementItem(
               id: a.id,
+              classId: a.classId,
               title: a.title,
               message: a.content,
               classCode: a.subjectCode,
@@ -76,9 +131,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
         );
 
       if (mounted) {
-        setState(() {});
+        setState(() => _isLoading = false);
       }
-    } catch (_) {}
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = formatSupabaseError(error);
+      });
+    }
   }
 
   // ------------------------------------------------------------
@@ -90,8 +151,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   // enrolled class code AND section match the announcement target.
 
   List<dynamic> get _studentNotices {
-    final enrolledAnnouncements =
-        AnnouncementStore.items.where((announcement) {
+    final enrolledAnnouncements = AnnouncementStore.items.where((announcement) {
       return StudentEnrollmentStore.items.any((enrollment) {
         return enrollment.code.trim().toLowerCase() ==
                 announcement.classCode.trim().toLowerCase() &&
@@ -100,10 +160,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       });
     }).toList();
 
-    return [
-      ...NoticeStore.items,
-      ...enrolledAnnouncements,
-    ];
+    return [...NoticeStore.items, ...enrolledAnnouncements];
   }
 
   @override
@@ -171,13 +228,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return _studentNotices.where((notice) {
       final matchesFilter = switch (filter) {
         'Unread' => notice.unread,
-        'Classes' => notice.category == 'Classes',
+        'Courses' => notice.category == 'Classes',
         _ => true,
       };
 
       final query = _searchQuery.trim().toLowerCase();
 
-      final matchesSearch = query.isEmpty ||
+      final matchesSearch =
+          query.isEmpty ||
           notice.title.toLowerCase().contains(query) ||
           notice.message.toLowerCase().contains(query) ||
           notice.category.toLowerCase().contains(query) ||
@@ -204,21 +262,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        final isInstructorAnnouncement =
-            notice is AnnouncementItem;
+        final isInstructorAnnouncement = notice is AnnouncementItem;
 
         return SafeArea(
           child: Container(
             constraints: BoxConstraints(
-              maxHeight:
-                  MediaQuery.of(sheetContext).size.height * 0.78,
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.78,
             ),
             padding: const EdgeInsets.fromLTRB(22, 12, 22, 25),
             decoration: const BoxDecoration(
               color: AppColors.surface,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -257,8 +311,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
                             'NOTIFICATION DETAILS',
@@ -277,8 +330,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             ),
                             decoration: BoxDecoration(
                               color: AppColors.primaryLight,
-                              borderRadius:
-                                  BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               notice.category,
@@ -294,8 +346,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     ),
 
                     IconButton(
-                      onPressed: () =>
-                          Navigator.pop(sheetContext),
+                      onPressed: () => Navigator.pop(sheetContext),
                       icon: const Icon(
                         LucideIcons.x,
                         color: AppColors.textSecondary,
@@ -310,8 +361,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           notice.title,
@@ -353,15 +403,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
                               color: AppColors.surfaceSoft,
-                              borderRadius:
-                                  BorderRadius.circular(15),
-                              border: Border.all(
-                                color: AppColors.border,
-                              ),
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: AppColors.border),
                             ),
                             child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
                                   'TARGET CLASS',
@@ -434,8 +480,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           padding: const EdgeInsets.all(15),
                           decoration: BoxDecoration(
                             color: AppColors.surfaceSoft,
-                            borderRadius:
-                                BorderRadius.circular(15),
+                            borderRadius: BorderRadius.circular(15),
                           ),
                           child: const Row(
                             children: [
@@ -468,21 +513,31 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () =>
-                        Navigator.pop(sheetContext),
+                    onPressed: () async {
+                      Navigator.pop(sheetContext);
+                      if (notice is NoticeItem &&
+                          notice.category == 'Classes' &&
+                          notice.classId.isNotEmpty) {
+                        await _openAnnouncementClass(notice.classId);
+                      } else if (notice is AnnouncementItem &&
+                          notice.classId.isNotEmpty) {
+                        await _openAnnouncementClass(notice.classId);
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: AppColors.textOnPrimary,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 15,
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Text(
-                      'Done',
+                    child: Text(
+                      (notice is NoticeItem && notice.category == 'Classes') ||
+                              notice is AnnouncementItem
+                          ? 'Open class'
+                          : 'Done',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
@@ -517,17 +572,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
             children: [
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Notifications',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 23,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.6,
-                      ),
+                      style: AppTextStyles.pageTitle,
                     ),
 
                     const SizedBox(height: 7),
@@ -574,8 +623,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 ),
                 child: IconButton(
                   tooltip: 'Mark all as read',
-                  onPressed:
-                      unreadCount == 0 ? null : _markAllAsRead,
+                  onPressed: unreadCount == 0 ? null : _markAllAsRead,
                   icon: Icon(
                     LucideIcons.checkCheck,
                     size: 19,
@@ -613,16 +661,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: AppColors.primaryLight,
               borderRadius: BorderRadius.circular(17),
-              border: Border.all(
-                color: AppColors.border,
-              ),
+              border: Border.all(color: AppColors.border),
             ),
             child: Row(
               children: [
@@ -644,8 +687,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
                 Expanded(
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Your updates',
@@ -760,7 +802,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
           child: FilterBar(
-            labels: const ['All', 'Unread', 'Classes'],
+            labels: const ['All', 'Unread', 'Courses'],
             selected: filter,
             onSelected: (value) {
               setState(() => filter = value);
@@ -772,19 +814,27 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
         // NOTIFICATION LIST
         Expanded(
-          child: notices.isEmpty
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                  ),
+                )
+              : _error != null
+              ? Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: AsyncErrorView(
+                    message: _error!,
+                    onRetry: _loadNotifications,
+                  ),
+                )
+              : notices.isEmpty
               ? _buildEmptyState()
               : ListView.separated(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(
-                    22,
-                    0,
-                    22,
-                    24,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
                   itemCount: notices.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: 11),
+                  separatorBuilder: (_, _) => const SizedBox(height: 11),
                   itemBuilder: (context, index) {
                     final notice = notices[index];
 
@@ -801,8 +851,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   // ------------------------------------------------------------
 
   Widget _buildNotificationCard(dynamic notice) {
-    final isInstructorAnnouncement =
-        notice is AnnouncementItem;
+    final isInstructorAnnouncement = notice is AnnouncementItem;
 
     return Material(
       color: Colors.transparent,
@@ -813,14 +862,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
           duration: const Duration(milliseconds: 220),
           padding: const EdgeInsets.all(15),
           decoration: BoxDecoration(
-            color: notice.unread
-                ? AppColors.primaryLight
-                : AppColors.surface,
+            color: notice.unread ? AppColors.primaryLight : AppColors.surface,
             borderRadius: BorderRadius.circular(19),
             border: Border.all(
-              color: notice.unread
-                  ? AppColors.border
-                  : AppColors.border,
+              color: notice.unread ? AppColors.border : AppColors.border,
             ),
             boxShadow: [
               BoxShadow(
@@ -843,11 +888,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       : AppColors.surfaceSoft,
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Icon(
-                  notice.icon,
-                  color: AppColors.primary,
-                  size: 21,
-                ),
+                child: Icon(notice.icon, color: AppColors.primary, size: 21),
               ),
 
               const SizedBox(width: 13),
@@ -855,12 +896,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
               // NOTIFICATION DETAILS
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Text(
@@ -881,8 +920,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           Container(
                             width: 8,
                             height: 8,
-                            margin:
-                                const EdgeInsets.only(top: 5),
+                            margin: const EdgeInsets.only(top: 5),
                             decoration: const BoxDecoration(
                               color: AppColors.primary,
                               shape: BoxShape.circle,
@@ -943,8 +981,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           ),
                           decoration: BoxDecoration(
                             color: AppColors.primaryLight,
-                            borderRadius:
-                                BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
                             notice.category,
@@ -1002,84 +1039,28 @@ class _NotificationsPageState extends State<NotificationsPage> {
     String message;
 
     if (_searchQuery.isNotEmpty) {
-      message =
-          'Try another keyword to find what you are looking for.';
+      message = 'Try another keyword to find what you are looking for.';
     } else if (filter == 'Unread') {
       message = 'You have no unread notifications right now.';
-    } else if (filter == 'Classes') {
+    } else if (filter == 'Courses') {
       message = 'There are no class notifications yet.';
     } else {
-      message =
-          'When something important happens, you will see it here.';
+      message = 'When something important happens, you will see it here.';
     }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 35,
-          vertical: 30,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 86,
-              height: 86,
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight,
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: const Icon(
-                LucideIcons.bell,
-                color: AppColors.primary,
-                size: 36,
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            const Text(
-              'Nothing to see here',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                height: 1.6,
-              ),
-            ),
-
-            if (_searchQuery.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _searchController.clear();
-                    _searchQuery = '';
-                  });
-                },
-                icon: const Icon(
-                  LucideIcons.rotateCcw,
-                  size: 15,
-                ),
-                label: const Text('Clear search'),
-              ),
-            ],
-          ],
-        ),
-      ),
+    return EmptyStateView(
+      icon: LucideIcons.bell,
+      title: 'Nothing to see here',
+      message: message,
+      actionLabel: _searchQuery.isNotEmpty ? 'Clear search' : null,
+      onAction: _searchQuery.isNotEmpty
+          ? () {
+              setState(() {
+                _searchController.clear();
+                _searchQuery = '';
+              });
+            }
+          : null,
     );
   }
 }

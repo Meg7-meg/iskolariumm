@@ -35,32 +35,29 @@ class _IskolariumShellState extends State<IskolariumShell> {
   // Opens Study Sessions as a separate page.
   // It does not add another bottom navigation destination.
 
-void openStudySessions() {
-  Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => StudySessionsPage(
-        onNavigateToTab: (index) {
-          Navigator.of(context).pop();
+  void openStudySessions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => StudySessionsPage(
+          onNavigateToTab: (index) {
+            Navigator.of(context).pop();
 
-          setState(() {
-            selectedIndex = index;
-          });
-        },
+            setState(() {
+              selectedIndex = index;
+            });
+          },
+        ),
       ),
-    ),
-  );
-}
-
+    );
+  }
 
   // Opens the student's attendance details as a separate page.
   // It does not add another bottom navigation destination.
   void openAttendance() {
     Navigator.push(
       context,
-      MaterialPageRoute<void>(
-        builder: (_) => const StudentAttendanceScreen(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const StudentAttendanceScreen()),
     );
   }
 
@@ -69,9 +66,7 @@ void openStudySessions() {
   void openScores() {
     Navigator.push(
       context,
-      MaterialPageRoute<void>(
-        builder: (_) => const StudentScoresDisplay(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const StudentScoresDisplay()),
     );
   }
 
@@ -103,7 +98,7 @@ void openStudySessions() {
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -119,14 +114,30 @@ void openStudySessions() {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Add to Iskolarium',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: ink,
-                  ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Add to Iskolarium',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: ink,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close quick add',
+                      onPressed: () => Navigator.pop(sheetContext),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.surfaceBlue,
+                        foregroundColor: AppColors.textSecondary,
+                        fixedSize: const Size(34, 34),
+                      ),
+                      icon: const Icon(LucideIcons.x, size: 16),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 const Text(
@@ -135,7 +146,7 @@ void openStudySessions() {
                 ),
                 const SizedBox(height: 20),
                 _buildAddOption(
-                  icon: Icons.menu_book_rounded,
+                  icon: LucideIcons.bookOpen,
                   title: 'Add Class',
                   subtitle: 'Add a subject and class schedule',
                   onTap: () {
@@ -146,20 +157,17 @@ void openStudySessions() {
                 ),
                 const SizedBox(height: 10),
                 _buildAddOption(
-                  icon: Icons.assignment_rounded,
-                  title: 'Add Task',
+                  icon: LucideIcons.clipboardList,
+                  title: 'Create',
                   subtitle: 'Add an assignment or activity',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    showTaskDialog(
-                    context,
-                    onSaved: refresh,
-                    );
+                    showTaskDialog(context, onSaved: refresh);
                   },
                 ),
                 const SizedBox(height: 10),
                 _buildAddOption(
-                  icon: Icons.calendar_month_rounded,
+                  icon: LucideIcons.calendarDays,
                   title: 'Add Event',
                   subtitle: 'Schedule a quiz or examination',
                   onTap: () {
@@ -221,15 +229,12 @@ void openStudySessions() {
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: muted,
-                      ),
+                      style: const TextStyle(fontSize: 11, color: muted),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: muted, size: 20),
+              const Icon(LucideIcons.chevronRight, color: muted, size: 20),
             ],
           ),
         ),
@@ -247,6 +252,7 @@ void openStudySessions() {
         onOpenStudySessions: openStudySessions,
         onOpenAttendance: openAttendance,
         onOpenScores: openScores,
+        onAddTask: () => showTaskDialog(context, onSaved: refresh),
         onRefresh: refresh,
       ),
       ClassesPage(onRefresh: refresh),
@@ -260,48 +266,72 @@ void openStudySessions() {
     ];
 
     const destinations = [
-      AcademicNavDestination(icon: LucideIcons.layoutDashboard, label: 'Overview'),
-      AcademicNavDestination(icon: LucideIcons.bookOpen, label: 'Classes'),
-      AcademicNavDestination(icon: LucideIcons.calendarDays, label: 'Calendar'),
-      AcademicNavDestination(icon: LucideIcons.checkSquare, label: 'Tasks'),
-      AcademicNavDestination(icon: LucideIcons.userRound, label: 'Profile'),
+      AcademicNavDestination(icon: LucideIcons.layoutGrid, label: 'Home'),
+      AcademicNavDestination(icon: LucideIcons.bookOpen, label: 'Courses'),
+      AcademicNavDestination(icon: LucideIcons.calendar, label: 'Calendar'),
+      AcademicNavDestination(icon: LucideIcons.checkSquare, label: 'Planner'),
+      AcademicNavDestination(icon: LucideIcons.user, label: 'Profile'),
     ];
 
-    return AcademicNavigationShell(
-      roleLabel: 'Student Portal',
-      destinations: destinations,
-      selectedIndex: selectedIndex,
-      onSelected: (index) {
-        setState(() {
-          showNotifications = false;
-          selectedIndex = index;
-        });
-      },
-      sidebarAction: SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: openAddBottomSheet,
-          icon: const Icon(LucideIcons.plus, size: 16),
-          label: const Text('Quick Add'),
+    final theme = Theme.of(context);
+    final interTextTheme = GoogleFonts.interTextTheme(theme.textTheme);
+    final overlayStyle = !showNotifications && selectedIndex == 0
+        ? SystemUiOverlayStyle.light.copyWith(statusBarColor: AppColors.navy)
+        : SystemUiOverlayStyle.dark.copyWith(
+            statusBarColor: AppColors.surfaceSoft,
+          );
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Theme(
+        data: theme.copyWith(
+          scaffoldBackgroundColor: AppColors.surfaceSoft,
+          textTheme: interTextTheme,
+          primaryTextTheme: GoogleFonts.interTextTheme(theme.primaryTextTheme),
+        ),
+        child: AcademicNavigationShell(
+          roleLabel: 'Student Portal',
+          destinations: destinations,
+          selectedIndex: selectedIndex,
+          maxWidth: !showNotifications && selectedIndex == 0
+              ? double.infinity
+              : 520,
+          onSelected: (index) {
+            setState(() {
+              showNotifications = false;
+              selectedIndex = index;
+            });
+          },
+          sidebarAction: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: openAddBottomSheet,
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: const Text('Quick Add'),
+            ),
+          ),
+          floatingActionButton:
+              showNotifications ||
+                  MediaQuery.sizeOf(context).width >= AppBreakpoints.desktop
+              ? null
+              : FloatingActionButton(
+                  onPressed: openAddBottomSheet,
+                  backgroundColor: const Color(0xFF325A8E),
+                  foregroundColor: Colors.white,
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.lg),
+                  ),
+                  child: const Icon(LucideIcons.plus, size: 22),
+                ),
+          body: showNotifications
+              ? NotificationsPage(
+                  onBack: closeNotifications,
+                  onRefresh: refresh,
+                )
+              : IndexedStack(index: selectedIndex, children: pages),
         ),
       ),
-      floatingActionButton: showNotifications ||
-              selectedIndex != 0 ||
-              MediaQuery.sizeOf(context).width >= AppBreakpoints.desktop
-          ? null
-          : FloatingActionButton(
-              onPressed: openAddBottomSheet,
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.lg),
-              ),
-              child: const Icon(LucideIcons.plus, size: 22),
-            ),
-      body: showNotifications
-          ? NotificationsPage(onBack: closeNotifications, onRefresh: refresh)
-          : IndexedStack(index: selectedIndex, children: pages),
     );
   }
 }
@@ -319,11 +349,11 @@ class AppBottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const items = [
-      (Icons.home_outlined, 'Home'),
-      (Icons.menu_book_outlined, 'Classes'),
-      (Icons.calendar_month_outlined, 'Calendar'),
-      (Icons.assignment_outlined, 'Tasks'),
-      (Icons.person_outline, 'Profile'),
+      (LucideIcons.layoutGrid, 'Home'),
+      (LucideIcons.bookOpen, 'Courses'),
+      (LucideIcons.calendar, 'Calendar'),
+      (LucideIcons.checkSquare, 'Planner'),
+      (LucideIcons.user, 'Profile'),
     ];
 
     return Container(

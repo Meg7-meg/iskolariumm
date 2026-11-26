@@ -1,4 +1,3 @@
-
 part of '../main.dart';
 
 // ============================================================
@@ -27,38 +26,32 @@ class StudySession {
     this.isCompleted = false,
   });
 
-  DateTime get startDateTime => DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
+  DateTime get startDateTime =>
+      DateTime(date.year, date.month, date.day, time.hour, time.minute);
 }
 
 class StudySessionsPage extends StatefulWidget {
   final ValueChanged<int> onNavigateToTab;
 
-  const StudySessionsPage({
-    super.key,
-    required this.onNavigateToTab,
-  });
+  const StudySessionsPage({super.key, required this.onNavigateToTab});
 
   @override
   State<StudySessionsPage> createState() => _StudySessionsPageState();
 }
 
 class _StudySessionsPageState extends State<StudySessionsPage> {
-  static const Color _blue = Color(0xFF1A56DB);
-  static const Color _darkBlue = Color(0xFF10213D);
-  static const Color _muted = Color(0xFF71809B);
-  static const Color _background = Color(0xFFF4F7FD);
-  static const Color _lightBlue = Color(0xFFEDF3FF);
-  static const Color _border = Color(0xFFE2EAF7);
-  static const Color _green = Color(0xFF239B69);
+  static const Color _blue = AppColors.primary;
+  static const Color _darkBlue = AppColors.textPrimary;
+  static const Color _muted = AppColors.textSecondary;
+  static const Color _background = AppColors.background;
+  static const Color _lightBlue = AppColors.primaryLight;
+  static const Color _border = AppColors.border;
+  static const Color _green = AppColors.success;
 
   final List<StudySession> _sessions = [];
   String _selectedFilter = 'All';
+  bool _isLoading = true;
+  String? _loadError;
 
   @override
   void initState() {
@@ -67,6 +60,13 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
   }
 
   Future<void> _loadSessions() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
+
     try {
       final records = await OrganizerService.getStudySessions();
       if (!mounted) return;
@@ -77,8 +77,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             records.map((r) {
               final parts = r.startTime.split(':');
               final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 9 : 9;
-              final minute =
-                  parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+              final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
               return StudySession(
                 id: r.id,
                 title: r.title,
@@ -92,7 +91,13 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             }),
           );
       });
-    } catch (_) {}
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+          _isLoading = false;
+          _loadError = formatSupabaseError(error);
+      });
+    }
   }
 
   List<StudySession> get _filteredSessions {
@@ -108,24 +113,19 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
       return true;
     }).toList();
 
-    filtered.sort(
-      (a, b) => a.startDateTime.compareTo(b.startDateTime),
-    );
+    filtered.sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
 
     return filtered;
   }
 
-  int get _completedCount =>
-      _sessions.where((s) => s.isCompleted).length;
+  int get _completedCount => _sessions.where((s) => s.isCompleted).length;
 
-  int get _upcomingCount =>
-      _sessions.where((s) => !s.isCompleted).length;
+  int get _upcomingCount => _sessions.where((s) => !s.isCompleted).length;
 
   int get _totalStudyMinutes => _sessions.fold(
-        0,
-        (total, session) =>
-            total + (session.isCompleted ? session.duration : 0),
-      );
+    0,
+    (total, session) => total + (session.isCompleted ? session.duration : 0),
+  );
 
   double get _completionRate =>
       _sessions.isEmpty ? 0 : _completedCount / _sessions.length;
@@ -145,13 +145,13 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                 padding: const EdgeInsets.fromLTRB(22, 12, 22, 125),
                 children: [
                   _buildHeader(),
-                  const SizedBox(height: 25),
+                  const SizedBox(height: AppSpacing.xl),
                   _buildSummary(),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: AppSpacing.xxl),
                   _buildSectionHeader(),
-                  const SizedBox(height: 15),
+                  const SizedBox(height: AppSpacing.md),
                   _buildFilters(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: AppSpacing.lg),
                   _buildSessionList(),
                 ],
               ),
@@ -225,21 +225,12 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             children: [
               Text(
                 'Study Sessions',
-                style: TextStyle(
-                  color: _darkBlue,
-                  fontSize: 27,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.9,
-                ),
+                style: AppTextStyles.pageTitle,
               ),
               SizedBox(height: 6),
               Text(
                 'Make time for focused learning.',
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: AppTextStyles.bodySmall,
               ),
             ],
           ),
@@ -253,11 +244,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             child: const SizedBox(
               width: 52,
               height: 52,
-              child: Icon(
-                LucideIcons.plus,
-                color: Colors.white,
-                size: 24,
-              ),
+              child: Icon(LucideIcons.plus, color: Colors.white, size: 24),
             ),
           ),
         ),
@@ -273,14 +260,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF10213D),
-            Color(0xFF183968),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppColors.navy,
         borderRadius: BorderRadius.circular(23),
         boxShadow: [
           BoxShadow(
@@ -297,7 +277,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             children: [
               Icon(
                 LucideIcons.chartNoAxesCombined,
-                color: Color(0xFFA8C5FF),
+                color: AppColors.primaryLight,
                 size: 20,
               ),
               SizedBox(width: 10),
@@ -356,10 +336,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             children: [
               const Text(
                 'Completion progress',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 10,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 10),
               ),
               Text(
                 '${(_completionRate * 100).round()}%',
@@ -378,9 +355,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
               value: _completionRate,
               minHeight: 7,
               backgroundColor: Colors.white24,
-              valueColor: const AlwaysStoppedAnimation(
-                Color(0xFF80ACFF),
-              ),
+              valueColor: const AlwaysStoppedAnimation(AppColors.primaryLight),
             ),
           ),
           const SizedBox(height: 11),
@@ -388,25 +363,18 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             _sessions.isEmpty
                 ? 'Start planning your first study session.'
                 : '$_completedCount out of ${_sessions.length} sessions completed',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 10,
-            ),
+            style: const TextStyle(color: Colors.white70, fontSize: 10),
           ),
         ],
       ),
     );
   }
 
-  Widget _summaryItem(
-    IconData icon,
-    String value,
-    String label,
-  ) {
+  Widget _summaryItem(IconData icon, String value, String label) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: const Color(0xFFA8C5FF), size: 18),
+        Icon(icon, color: AppColors.primaryLight, size: 18),
         const SizedBox(height: 11),
         FittedBox(
           fit: BoxFit.scaleDown,
@@ -424,10 +392,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 9,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 9),
         ),
       ],
     );
@@ -469,10 +434,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: _lightBlue,
             borderRadius: BorderRadius.circular(20),
@@ -500,7 +462,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFE9EFF9),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -553,6 +515,19 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
   Widget _buildSessionList() {
     final sessions = _filteredSessions;
 
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    if (_loadError != null) {
+      return AsyncErrorView(message: _loadError!, onRetry: _loadSessions);
+    }
+
     if (sessions.isEmpty) {
       return _buildEmptyState();
     }
@@ -578,85 +553,21 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
     final title = completed
         ? 'No completed sessions yet'
         : upcoming
-            ? 'No upcoming sessions'
-            : 'Your study plan is empty';
+        ? 'No upcoming sessions'
+        : 'Your study plan is empty';
 
     final description = completed
         ? 'Your completed study activities will appear here.'
         : upcoming
-            ? 'Plan your next learning activity to stay organized.'
-            : 'Create your first study session and start organizing your learning time.';
+        ? 'Plan your next learning activity to stay organized.'
+        : 'Create your first study session and start organizing your learning time.';
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 25,
-        vertical: 35,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 76,
-            height: 76,
-            decoration: const BoxDecoration(
-              color: _lightBlue,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              completed
-                  ? LucideIcons.checkCheck
-                  : LucideIcons.calendarDays,
-              color: _blue,
-              size: 30,
-            ),
-          ),
-          const SizedBox(height: 19),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _darkBlue,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _muted,
-              fontSize: 11,
-              height: 1.6,
-            ),
-          ),
-          if (!completed) ...[
-            const SizedBox(height: 23),
-            ElevatedButton.icon(
-              onPressed: _showAddSessionDialog,
-              icon: const Icon(LucideIcons.plus, size: 17),
-              label: const Text('Create study session'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _blue,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+    return EmptyStateView(
+      icon: completed ? LucideIcons.checkCheck : LucideIcons.calendarDays,
+      title: title,
+      message: description,
+      actionLabel: completed ? null : 'Create study session',
+      onAction: completed ? null : _showAddSessionDialog,
     );
   }
 
@@ -667,8 +578,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
   Widget _sessionCard(StudySession session) {
     final completed = session.isCompleted;
     final accent = completed ? _green : _blue;
-    final accentBackground =
-        completed ? const Color(0xFFEAF8F1) : _lightBlue;
+    final accentBackground = completed ? AppColors.successLight : _lightBlue;
 
     return Container(
       padding: const EdgeInsets.all(17),
@@ -697,9 +607,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  completed
-                      ? LucideIcons.checkCheck
-                      : LucideIcons.bookOpen,
+                  completed ? LucideIcons.checkCheck : LucideIcons.bookOpen,
                   color: accent,
                   size: 21,
                 ),
@@ -727,20 +635,13 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                       session.subject,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 10,
-                      ),
+                      style: const TextStyle(color: _muted, fontSize: 10),
                     ),
                   ],
                 ),
               ),
               PopupMenuButton<String>(
-                icon: const Icon(
-                  LucideIcons.ellipsis,
-                  color: _muted,
-                  size: 21,
-                ),
+                icon: const Icon(LucideIcons.ellipsis, color: _muted, size: 21),
                 onSelected: (value) {
                   if (value == 'edit') {
                     _showEditSessionDialog(session);
@@ -755,11 +656,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                     value: 'edit',
                     child: Row(
                       children: [
-                        Icon(
-                          LucideIcons.pencil,
-                          size: 17,
-                          color: _blue,
-                        ),
+                        Icon(LucideIcons.pencil, size: 17, color: _blue),
                         SizedBox(width: 10),
                         Text('Edit session'),
                       ],
@@ -778,9 +675,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          completed
-                              ? 'Mark as upcoming'
-                              : 'Mark as completed',
+                          completed ? 'Mark as upcoming' : 'Mark as completed',
                         ),
                       ],
                     ),
@@ -792,12 +687,12 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                         Icon(
                           LucideIcons.trash2,
                           size: 17,
-                          color: Colors.redAccent,
+                          color: AppColors.danger,
                         ),
                         SizedBox(width: 10),
                         Text(
                           'Delete session',
-                          style: TextStyle(color: Colors.redAccent),
+                          style: TextStyle(color: AppColors.danger),
                         ),
                       ],
                     ),
@@ -810,11 +705,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
             const SizedBox(height: 15),
             Text(
               session.description,
-              style: const TextStyle(
-                color: _muted,
-                fontSize: 11,
-                height: 1.6,
-              ),
+              style: const TextStyle(color: _muted, fontSize: 11, height: 1.6),
             ),
           ],
           const SizedBox(height: 16),
@@ -828,14 +719,8 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                 LucideIcons.calendarDays,
                 _formatDate(session.date),
               ),
-              _sessionDetail(
-                LucideIcons.clock,
-                _formatTime(session.time),
-              ),
-              _sessionDetail(
-                LucideIcons.timer,
-                '${session.duration} min',
-              ),
+              _sessionDetail(LucideIcons.clock, _formatTime(session.time)),
+              _sessionDetail(LucideIcons.timer, '${session.duration} min'),
             ],
           ),
           const SizedBox(height: 16),
@@ -917,14 +802,10 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
   // ADD / EDIT SESSION DIALOG
   // ============================================================
 
-  Future<void> _showSessionDialog({
-    StudySession? session,
-  }) async {
+  Future<void> _showSessionDialog({StudySession? session}) async {
     final isEditing = session != null;
 
-    final titleController = TextEditingController(
-      text: session?.title ?? '',
-    );
+    final titleController = TextEditingController(text: session?.title ?? '');
 
     final subjectController = TextEditingController(
       text: session?.subject ?? '',
@@ -982,8 +863,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     isEditing
@@ -1009,12 +889,8 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                               ),
                             ),
                             IconButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext),
-                              icon: const Icon(
-                                LucideIcons.x,
-                                color: _muted,
-                              ),
+                              onPressed: () => Navigator.pop(dialogContext),
+                              icon: const Icon(LucideIcons.x, color: _muted),
                             ),
                           ],
                         ),
@@ -1030,7 +906,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter a session title.';
+                              return 'Enter a study session title.';
                             }
                             return null;
                           },
@@ -1047,7 +923,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter a subject.';
+                              return 'Enter a subject.';
                             }
                             return null;
                           },
@@ -1135,10 +1011,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                               value: 45,
                               child: Text('45 minutes'),
                             ),
-                            DropdownMenuItem(
-                              value: 60,
-                              child: Text('1 hour'),
-                            ),
+                            DropdownMenuItem(value: 60, child: Text('1 hour')),
                             DropdownMenuItem(
                               value: 90,
                               child: Text('1 hour 30 minutes'),
@@ -1166,8 +1039,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                           children: [
                             Expanded(
                               child: OutlinedButton(
-                                onPressed: () =>
-                                    Navigator.pop(dialogContext),
+                                onPressed: () => Navigator.pop(dialogContext),
                                 child: const Text('Cancel'),
                               ),
                             ),
@@ -1188,8 +1060,8 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                                         id: session.id!,
                                         title: titleController.text.trim(),
                                         subject: subjectController.text.trim(),
-                                        description:
-                                            descriptionController.text.trim(),
+                                        description: descriptionController.text
+                                            .trim(),
                                         sessionDate: selectedDate,
                                         startTime: timeStr,
                                         durationMinutes: selectedDuration,
@@ -1198,8 +1070,8 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
                                       await OrganizerService.createStudySession(
                                         title: titleController.text.trim(),
                                         subject: subjectController.text.trim(),
-                                        description:
-                                            descriptionController.text.trim(),
+                                        description: descriptionController.text
+                                            .trim(),
                                         sessionDate: selectedDate,
                                         startTime: timeStr,
                                         durationMinutes: selectedDuration,
@@ -1280,23 +1152,14 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
     );
   }
 
-  InputDecoration _inputDecoration(
-    String hint,
-    IconData icon,
-  ) {
+  InputDecoration _inputDecoration(String hint, IconData icon) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(
-        color: Color(0xFF9AAAC2),
-        fontSize: 11,
-      ),
+      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 11),
       prefixIcon: Icon(icon, color: _muted, size: 17),
       filled: true,
       fillColor: _background,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 13,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
         borderSide: const BorderSide(color: _border),
@@ -1307,10 +1170,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(
-          color: _blue,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: _blue, width: 1.5),
       ),
     );
   }
@@ -1327,10 +1187,7 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(13),
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
           decoration: BoxDecoration(
             border: Border.all(color: _border),
             borderRadius: BorderRadius.circular(13),
@@ -1374,9 +1231,8 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
       } catch (e) {
         if (mounted) {
           setState(() => session.isCompleted = !next);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(formatSupabaseError(e))),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
           return;
         }
       }
@@ -1414,26 +1270,19 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
           ),
           content: const Text(
             'This study session will be permanently removed from your list.',
-            style: TextStyle(
-              color: _muted,
-              fontSize: 12,
-              height: 1.6,
-            ),
+            style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: _muted),
-              ),
+              child: const Text('Cancel', style: TextStyle(color: _muted)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text(
                 'Delete',
                 style: TextStyle(
-                  color: Colors.redAccent,
+                  color: AppColors.danger,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -1449,9 +1298,8 @@ class _StudySessionsPageState extends State<StudySessionsPage> {
           await OrganizerService.deleteStudySession(session.id!);
         } catch (e) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(formatSupabaseError(e))),
-            );
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
           }
           return;
         }

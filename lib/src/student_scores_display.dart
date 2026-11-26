@@ -1,6 +1,6 @@
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../services/academic_service.dart';
 import '../services/supabase_client_provider.dart';
 import 'app_colors.dart';
@@ -14,15 +14,14 @@ class StudentScoresDisplay extends StatefulWidget {
 }
 
 class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
-  static const Color primaryBlue = Color(0xFF3678D4);
-  static const Color darkBlue = Color(0xFF245A9E);
-  static const Color background = Color(0xFFF5F8FC);
-  static const Color textDark = Color(0xFF263445);
-  static const Color muted = Color(0xFF84909D);
-  static const Color border = Color(0xFFE6ECF3);
-  static const Color green = Color(0xFF20A477);
-  static const Color orange = Color(0xFFE99A35);
-  static const Color red = Color(0xFFE05B5B);
+  static const Color primaryBlue = AppColors.primary;
+  static const Color darkBlue = AppColors.textPrimary;
+  static const Color background = AppColors.background;
+  static const Color textDark = AppColors.textPrimary;
+  static const Color muted = AppColors.textSecondary;
+  static const Color green = AppColors.scoreExcellent;
+  static const Color orange = AppColors.scoreAverage;
+  static const Color red = AppColors.scoreNeedsImprovement;
 
   bool _isLoading = true;
   String? _error;
@@ -105,24 +104,16 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(
-            LucideIcons.arrowLeft,
-            color: textDark,
-            size: 21,
-          ),
+          icon: const Icon(LucideIcons.arrowLeft, color: textDark, size: 21),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'My Scores',
-          style: TextStyle(
-            color: textDark,
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-          ),
+          'Grades',
+          style: AppTextStyles.screenTitle,
         ),
         centerTitle: false,
       ),
@@ -132,59 +123,46 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
           maxWidth: 920,
           padding: EdgeInsets.zero,
           child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: primaryBlue),
-              )
-            : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, textAlign: TextAlign.center),
-                          const SizedBox(height: 12),
-                          FilledButton(
-                            onPressed: _loadScores,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : RefreshIndicator(
-                    color: primaryBlue,
-                    onRefresh: _loadScores,
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 22),
-                        _buildOverviewCard(),
-                        const SizedBox(height: 25),
-                        _buildSectionHeader(),
-                        const SizedBox(height: 14),
-                        if (subjects.isEmpty)
-                          Container(
-                            padding: const EdgeInsets.all(22),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: border),
-                            ),
-                            child: const Text(
-                              'No scores recorded yet. Scores submitted by your instructors will appear here.',
-                              style: TextStyle(color: muted, fontSize: 13),
-                            ),
-                          )
-                        else
-                          ...subjects.map(_buildSubjectCard),
-                        const SizedBox(height: 20),
-                        _buildInformationNote(),
-                      ],
+              ? const Center(
+                  child: CircularProgressIndicator(color: primaryBlue),
+                )
+              : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: AsyncErrorView(
+                      message: _error!,
+                      onRetry: _loadScores,
                     ),
                   ),
+                )
+              : RefreshIndicator(
+                  color: primaryBlue,
+                  onRefresh: _loadScores,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+                    children: [
+                      _buildHeader(),
+                      const SizedBox(height: 22),
+                      _buildOverviewCard(),
+                      const SizedBox(height: 25),
+                      _buildSectionHeader(),
+                      const SizedBox(height: 14),
+                      if (subjects.isEmpty)
+                        const EmptyStateView(
+                          icon: LucideIcons.chartNoAxesCombined,
+                          title: 'No grades yet',
+                          message:
+                              'Your recorded scores will appear here when your instructor enters them.',
+                        )
+                      else
+                        ...subjects.map(_buildSubjectCard),
+                      const SizedBox(height: 20),
+                      _buildInformationNote(),
+                    ],
+                  ),
                 ),
+        ),
       ),
     );
   }
@@ -194,20 +172,13 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Academic Performance',
-          style: TextStyle(
-            color: textDark,
-            fontSize: 23,
-            fontWeight: FontWeight.w800,
-          ),
+          'Grades',
+          style: AppTextStyles.pageTitle,
         ),
         const SizedBox(height: 6),
         Text(
           'Track your quiz, activity, and exam results.',
-          style: TextStyle(
-            color: muted,
-            fontSize: 13,
-          ),
+          style: AppTextStyles.bodySmall,
         ),
       ],
     );
@@ -216,23 +187,8 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
   Widget _buildOverviewCard() {
     final average = averageScore.round();
 
-    return Container(
-      padding: const EdgeInsets.all(21),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [primaryBlue, darkBlue],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: primaryBlue.withOpacity(0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+    return SurfacePanel(
+      padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -241,23 +197,19 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
               Container(
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(AppRadii.md),
                 ),
                 child: const Icon(
                   LucideIcons.chartNoAxesCombined,
-                  color: Colors.white,
+                  color: primaryBlue,
                   size: 20,
                 ),
               ),
               const SizedBox(width: 10),
               const Text(
                 'Overall Average',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: AppTextStyles.bodySmall,
               ),
             ],
           ),
@@ -267,22 +219,14 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
             children: [
               Text(
                 '$average%',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 43,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                ),
+                style: AppTextStyles.pageTitle.copyWith(fontSize: 42),
               ),
               const SizedBox(width: 10),
               const Padding(
                 padding: EdgeInsets.only(bottom: 5),
                 child: Text(
                   'Average score',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
+                  style: AppTextStyles.bodySmall,
                 ),
               ),
             ],
@@ -291,16 +235,16 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
           Container(
             height: 7,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.20),
-              borderRadius: BorderRadius.circular(20),
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(AppRadii.full),
             ),
             child: FractionallySizedBox(
               alignment: Alignment.centerLeft,
               widthFactor: average / 100,
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
                 ),
               ),
             ),
@@ -308,10 +252,7 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
           const SizedBox(height: 12),
           Text(
             '${subjects.length} subjects • ${_allScores.length} recorded scores',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-            ),
+            style: AppTextStyles.meta,
           ),
         ],
       ),
@@ -323,12 +264,8 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text(
-          'Subject Scores',
-          style: TextStyle(
-            color: textDark,
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-          ),
+          'Course Performance',
+          style: AppTextStyles.sectionHeading,
         ),
         Text(
           '${subjects.length} Subjects',
@@ -348,99 +285,76 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
     final int exam = subject['exam'];
     final int average = ((quiz + activity + exam) / 3).round();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.025),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      subject['name'],
-                      style: const TextStyle(
-                        color: textDark,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: SurfacePanel(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        subject['name'],
+                        style: AppTextStyles.cardHeading,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subject['teacher'],
-                      style: const TextStyle(
-                        color: muted,
-                        fontSize: 12,
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        subject['teacher'],
+                        style: AppTextStyles.bodySmall,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: scoreColor(average).withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      '$average%',
-                      style: TextStyle(
-                        color: scoreColor(average),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scoreColor(average).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '$average%',
+                        style: TextStyle(
+                          color: scoreColor(average),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
-                    const Text(
-                      'Average',
-                      style: TextStyle(
-                        color: muted,
-                        fontSize: 9,
-                      ),
-                    ),
-                  ],
+                      const Text('Average', style: AppTextStyles.meta),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 19),
-          _buildScoreRow(
-            icon: LucideIcons.fileQuestion,
-            label: 'Quiz',
-            score: quiz,
-          ),
-          const SizedBox(height: 15),
-          _buildScoreRow(
-            icon: LucideIcons.clipboardList,
-            label: 'Activity',
-            score: activity,
-          ),
-          const SizedBox(height: 15),
-          _buildScoreRow(
-            icon: LucideIcons.fileText,
-            label: 'Exam',
-            score: exam,
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            _buildScoreRow(
+              icon: LucideIcons.fileQuestion,
+              label: 'Quiz',
+              score: quiz,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _buildScoreRow(
+              icon: LucideIcons.clipboardList,
+              label: 'Activity',
+              score: activity,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _buildScoreRow(
+              icon: LucideIcons.fileText,
+              label: 'Exam',
+              score: exam,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -460,11 +374,7 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
           width: 67,
           child: Text(
             label,
-            style: const TextStyle(
-              color: muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+          style: AppTextStyles.bodySmall,
           ),
         ),
         Expanded(
@@ -496,32 +406,19 @@ class _StudentScoresDisplayState extends State<StudentScoresDisplay> {
   }
 
   Widget _buildInformationNote() {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEDF4FC),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: const Color(0xFFDCE9F8),
-        ),
-      ),
+    return SurfacePanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      backgroundColor: AppColors.infoLight,
+      borderColor: AppColors.infoBorder,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            LucideIcons.info,
-            color: primaryBlue,
-            size: 19,
-          ),
+          const Icon(LucideIcons.info, color: primaryBlue, size: 19),
           const SizedBox(width: 11),
           const Expanded(
             child: Text(
               'Your scores are view-only. Only your instructor can enter or update your academic scores.',
-              style: TextStyle(
-                color: darkBlue,
-                fontSize: 12,
-                height: 1.5,
-              ),
+              style: TextStyle(color: darkBlue, fontSize: 12, height: 1.5),
             ),
           ),
         ],

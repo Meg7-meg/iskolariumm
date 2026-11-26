@@ -1,4 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'app_theme_service.dart';
 import 'supabase_client_provider.dart';
 
 class UserProfile {
@@ -7,6 +9,7 @@ class UserProfile {
   final String email;
   final String role;
   final String preferredTheme;
+  final String? avatarPath;
   final Map<String, dynamic> notificationPreferences;
 
   const UserProfile({
@@ -15,6 +18,7 @@ class UserProfile {
     required this.email,
     required this.role,
     this.preferredTheme = 'system',
+    this.avatarPath,
     this.notificationPreferences = const {
       'tasks': true,
       'events': true,
@@ -30,8 +34,8 @@ class UserProfile {
     final prefs = prefsRaw is Map<String, dynamic>
         ? prefsRaw
         : prefsRaw is Map
-            ? Map<String, dynamic>.from(prefsRaw)
-            : <String, dynamic>{'tasks': true, 'events': true, 'classes': true};
+        ? Map<String, dynamic>.from(prefsRaw)
+        : <String, dynamic>{'tasks': true, 'events': true, 'classes': true};
 
     return UserProfile(
       id: map['id'].toString(),
@@ -39,6 +43,7 @@ class UserProfile {
       email: (map['email'] ?? '').toString(),
       role: (map['role'] ?? 'student').toString().toLowerCase(),
       preferredTheme: (map['preferred_theme'] ?? 'system').toString(),
+      avatarPath: map['avatar_path']?.toString(),
       notificationPreferences: prefs,
     );
   }
@@ -87,6 +92,7 @@ class AuthService {
       );
     }
 
+    AppThemeService.applyPreference(profile.preferredTheme);
     return profile;
   }
 
@@ -103,10 +109,7 @@ class AuthService {
     final response = await supabase.auth.signUp(
       email: trimmedEmail,
       password: password,
-      data: {
-        'full_name': trimmedName,
-        'role': normalizedRole,
-      },
+      data: {'full_name': trimmedName, 'role': normalizedRole},
     );
 
     final user = response.user;
@@ -153,6 +156,10 @@ class AuthService {
     await supabase.auth.resetPasswordForEmail(email.trim());
   }
 
+  static Future<void> updatePassword(String password) async {
+    await supabase.auth.updateUser(UserAttributes(password: password));
+  }
+
   static Future<UserProfile?> getCurrentProfile() async {
     final user = currentUser;
     if (user == null) return null;
@@ -164,16 +171,23 @@ class AuthService {
         .maybeSingle();
 
     if (row == null) return null;
-    return UserProfile.fromMap(row);
+    final profile = UserProfile.fromMap(row);
+    AppThemeService.applyPreference(profile.preferredTheme);
+    return profile;
   }
 
   static Future<UserProfile> updateProfile({
     required String fullName,
     String? preferredTheme,
     Map<String, dynamic>? notificationPreferences,
+    String? avatarPath,
+    bool clearAvatar = false,
   }) async {
     final user = currentUser;
     if (user == null) throw Exception('Not signed in.');
+    if (clearAvatar && avatarPath != null) {
+      throw ArgumentError('Cannot set and clear the avatar path together.');
+    }
 
     final updates = <String, dynamic>{
       'full_name': fullName.trim(),
@@ -185,6 +199,11 @@ class AuthService {
     if (notificationPreferences != null) {
       updates['notification_preferences'] = notificationPreferences;
     }
+    if (avatarPath != null) {
+      updates['avatar_path'] = avatarPath;
+    } else if (clearAvatar) {
+      updates['avatar_path'] = null;
+    }
 
     final row = await supabase
         .from('profiles')
@@ -193,10 +212,15 @@ class AuthService {
         .select()
         .single();
 
-    return UserProfile.fromMap(row);
+    final profile = UserProfile.fromMap(row);
+    if (preferredTheme != null) {
+      AppThemeService.applyPreference(profile.preferredTheme);
+    }
+    return profile;
   }
 
   static Future<void> signOut() async {
     await supabase.auth.signOut();
+    AppThemeService.applyPreference('system');
   }
 }

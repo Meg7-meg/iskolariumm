@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../services/class_service.dart';
 import '../src/app_colors.dart';
 
-/// Reusable weekly meeting schedule editor for Create Class and Edit Class.
+/// Reusable weekly class-session editor for course creation and updates.
 /// Each meeting row includes Day of the week, Start time, End time, and
 /// a required Location selector (Online, Room Number, or TBA).
 /// On smaller screens, fields arrange vertically instead of squeezing into one row.
@@ -143,9 +143,8 @@ class _ClassScheduleEditorState extends State<ClassScheduleEditor> {
       builder: (ctx, child) {
         return Theme(
           data: Theme.of(ctx).copyWith(
-            colorScheme: Theme.of(ctx).colorScheme.copyWith(
-                  primary: AppColors.primary,
-                ),
+            colorScheme: Theme.of(ctx).colorScheme
+                .copyWith(primary: AppColors.primary),
           ),
           child: child!,
         );
@@ -180,8 +179,10 @@ class _ClassScheduleEditorState extends State<ClassScheduleEditor> {
               label: const Text('Add Meeting'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 textStyle: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -214,7 +215,7 @@ class _ClassScheduleEditorState extends State<ClassScheduleEditor> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'No meetings added yet. Tap "+ Add Meeting" to set day, time, and location.',
+                    'No sessions yet.',
                     style: TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,
@@ -259,50 +260,47 @@ class _ClassScheduleEditorState extends State<ClassScheduleEditor> {
                         .toList(),
                     onChanged: (value) {
                       if (value == null) return;
-                      _updateMeeting(
-                        index,
-                        item.copyWith(dayOfWeek: value),
-                      );
+                      _updateMeeting(index, item.copyWith(dayOfWeek: value));
                     },
                   );
 
                   final locationDropdown =
                       DropdownButtonFormField<MeetingLocationType>(
-                    key: ValueKey('loc_${index}_${locType.name}'),
-                    initialValue: locType,
-                    isExpanded: true,
-                    decoration: _inputDecoration(
-                      label: 'Location',
-                      prefixIcon: Icon(
-                        locType == MeetingLocationType.online
-                            ? LucideIcons.video
-                            : locType == MeetingLocationType.tba
+                        key: ValueKey('loc_${index}_${locType.name}'),
+                        initialValue: locType,
+                        isExpanded: true,
+                        decoration: _inputDecoration(
+                          label: 'Location',
+                          prefixIcon: Icon(
+                            locType == MeetingLocationType.online
+                                ? LucideIcons.video
+                                : locType == MeetingLocationType.tba
                                 ? LucideIcons.clock
                                 : LucideIcons.mapPin,
-                        size: 14,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    items: MeetingLocationType.values
-                        .map(
-                          (type) => DropdownMenuItem<MeetingLocationType>(
-                            value: type,
-                            child: Text(
-                              type.label,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
+                            size: 14,
+                            color: AppColors.primary,
                           ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      _onLocationTypeChanged(index, value);
-                    },
-                  );
+                        ),
+                        items: MeetingLocationType.values
+                            .map(
+                              (type) => DropdownMenuItem<MeetingLocationType>(
+                                value: type,
+                                child: Text(
+                                  type.label,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          _onLocationTypeChanged(index, value);
+                        },
+                      );
 
                   final roomField = TextFormField(
                     controller: _roomControllers[index],
@@ -328,10 +326,8 @@ class _ClassScheduleEditorState extends State<ClassScheduleEditor> {
                       }
                       return null;
                     },
-                    onChanged: (val) => _updateMeeting(
-                      index,
-                      item.copyWith(room: val),
-                    ),
+                    onChanged: (val) =>
+                        _updateMeeting(index, item.copyWith(room: val)),
                   );
 
                   final startField = _TimePickerField(
@@ -508,10 +504,7 @@ class _ClassScheduleEditorState extends State<ClassScheduleEditor> {
       prefixIcon: prefixIcon,
       filled: true,
       fillColor: AppColors.surface,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 11,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: AppColors.border),
@@ -570,11 +563,7 @@ class _TimePickerField extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(
-              LucideIcons.clock,
-              size: 14,
-              color: AppColors.primary,
-            ),
+            const Icon(LucideIcons.clock, size: 14, color: AppColors.primary),
             const SizedBox(width: 6),
             Expanded(
               child: Text(

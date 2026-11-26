@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import 'app_colors.dart';
 
 /// ============================================================
@@ -33,10 +34,10 @@ class AppSpacing {
 class AppRadii {
   AppRadii._();
 
-  static const double sm = 4;
-  static const double md = 6;
-  static const double lg = 8;
-  static const double xl = 12;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 20;
+  static const double xl = 24;
   static const double full = 999;
 }
 
@@ -126,7 +127,7 @@ class AppTextStyles {
   static const TextStyle label = TextStyle(
     fontSize: 11,
     fontWeight: FontWeight.w600,
-    letterSpacing: 0.5,
+    letterSpacing: 1.1,
     color: AppColors.textSecondary,
   );
 
@@ -196,65 +197,104 @@ class AcademicPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.section, bottom: AppSpacing.section),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (onBack != null) ...[
-            IconButton(
-              onPressed: onBack,
-              icon: const Icon(LucideIcons.arrowLeft, size: 18),
-              tooltip: 'Back',
-              style: IconButton.styleFrom(
-                foregroundColor: AppColors.textSecondary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadii.lg),
-                  side: const BorderSide(color: AppColors.border),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (eyebrow != null && eyebrow!.isNotEmpty) ...[
-                  Text(
-                    eyebrow!.toUpperCase(),
-                    style: AppTextStyles.label,
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                Text(title, style: AppTextStyles.pageTitle),
-                if (subtitle != null && subtitle!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle!,
-                    style: AppTextStyles.bodySmall,
-                  ),
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final text = Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (eyebrow != null && eyebrow!.isNotEmpty) ...[
+                Text(eyebrow!.toUpperCase(), style: AppTextStyles.label),
+                const SizedBox(height: 4),
               ],
-            ),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.pageTitle,
+              ),
+              if (subtitle != null && subtitle!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(subtitle!, style: AppTextStyles.bodySmall),
+              ],
+            ],
           ),
-          if (actions.isNotEmpty) ...[
-            const SizedBox(width: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: actions,
-            ),
-          ],
-        ],
-      ),
+        );
+
+        final backButton = onBack == null
+            ? null
+            : IconButton(
+                onPressed: onBack,
+                icon: const Icon(LucideIcons.arrowLeft, size: 18),
+                tooltip: 'Back',
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.lg),
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                ),
+              );
+
+        return Padding(
+          padding: const EdgeInsets.only(
+            top: AppSpacing.section,
+            bottom: AppSpacing.section,
+          ),
+          child: constraints.maxWidth < 360
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (backButton != null) ...[
+                          backButton,
+                          const SizedBox(width: AppSpacing.md),
+                        ],
+                        text,
+                      ],
+                    ),
+                    if (actions.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: actions,
+                      ),
+                    ],
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (backButton != null) ...[
+                      backButton,
+                      const SizedBox(width: AppSpacing.md),
+                    ],
+                    text,
+                    if (actions.isNotEmpty) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      Flexible(
+                        child: Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: actions,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+        );
+      },
     );
   }
 }
 
 // ------------------------------------------------------------
 // SURFACE PANEL
-// Flat 1px-bordered container. Zero elevation, zero shadow.
+// Soft 1px-bordered container with a subtle organic shadow.
 // Use for cards, sections, and content groupings.
 // ------------------------------------------------------------
 
@@ -281,9 +321,14 @@ class SurfacePanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor ?? AppColors.surface,
         borderRadius: BorderRadius.circular(borderRadius ?? AppRadii.lg),
-        border: Border.all(
-          color: borderColor ?? AppColors.border,
-        ),
+        border: Border.all(color: borderColor ?? AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.035),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: child,
     );
@@ -370,9 +415,7 @@ class SectionHeader extends StatelessWidget {
       padding: padding,
       child: Row(
         children: [
-          Expanded(
-            child: Text(title, style: AppTextStyles.sectionHeading),
-          ),
+          Expanded(child: Text(title, style: AppTextStyles.sectionHeading)),
           if (actionLabel != null && onAction != null)
             TextButton(
               onPressed: onAction,
@@ -403,11 +446,7 @@ class IskDivider extends StatelessWidget {
   final String? label;
   final EdgeInsetsGeometry margin;
 
-  const IskDivider({
-    super.key,
-    this.label,
-    this.margin = EdgeInsets.zero,
-  });
+  const IskDivider({super.key, this.label, this.margin = EdgeInsets.zero});
 
   @override
   Widget build(BuildContext context) {
@@ -426,10 +465,7 @@ class IskDivider extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              label!.toUpperCase(),
-              style: AppTextStyles.label,
-            ),
+            child: Text(label!.toUpperCase(), style: AppTextStyles.label),
           ),
           const Expanded(
             child: Divider(height: 1, thickness: 1, color: AppColors.border),
@@ -495,10 +531,7 @@ class EmptyStateView extends StatelessWidget {
           ),
           if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: AppSpacing.lg),
-            FilledButton(
-              onPressed: onAction,
-              child: Text(actionLabel!),
-            ),
+            FilledButton(onPressed: onAction, child: Text(actionLabel!)),
           ],
         ],
       ),
@@ -527,7 +560,11 @@ class AsyncErrorView extends StatelessWidget {
       backgroundColor: AppColors.dangerLight,
       child: Row(
         children: [
-          const Icon(LucideIcons.alertCircle, size: 16, color: AppColors.danger),
+          const Icon(
+            LucideIcons.alertCircle,
+            size: 16,
+            color: AppColors.danger,
+          ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Text(
@@ -540,10 +577,7 @@ class AsyncErrorView extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.md),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
+          OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );
@@ -558,10 +592,115 @@ class AcademicNavDestination {
   final IconData icon;
   final String label;
 
-  const AcademicNavDestination({
-    required this.icon,
-    required this.label,
+  const AcademicNavDestination({required this.icon, required this.label});
+}
+
+// ------------------------------------------------------------
+// DASHBOARD NOTIFICATION BUTTON
+// Soft-blue top-right header control shared by Student and Instructor.
+// ------------------------------------------------------------
+
+class DashboardNotificationButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final int unreadCount;
+  final bool isDarkHeader;
+
+  const DashboardNotificationButton({
+    super.key,
+    required this.onPressed,
+    this.unreadCount = 0,
+    this.isDarkHeader = false,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final count = unreadCount < 0
+        ? 0
+        : unreadCount > 99
+        ? 99
+        : unreadCount;
+    final showBadge = count > 0;
+    final badgeLabel = count > 99 ? '99+' : count.toString();
+
+    final background = isDarkHeader
+        ? Colors.white.withValues(alpha: 0.12)
+        : AppColors.surfaceBlue;
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(AppRadii.lg),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        child: Container(
+          width: 47,
+          height: 47,
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+            border: Border.all(
+              color: isDarkHeader
+                  ? Colors.white.withValues(alpha: 0.42)
+                  : AppColors.border,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (isDarkHeader ? Colors.black : AppColors.primary)
+                    .withValues(alpha: 0.10),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                LucideIcons.bell,
+                color: isDarkHeader ? Colors.white : AppColors.primary,
+                size: 23,
+              ),
+              if (showBadge)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.surface, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.danger.withValues(alpha: 0.20),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      badgeLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ------------------------------------------------------------
@@ -578,6 +717,7 @@ class AcademicNavigationShell extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final Widget body;
+  final double maxWidth;
   final Widget? floatingActionButton;
   final Widget? sidebarAction;
 
@@ -588,299 +728,20 @@ class AcademicNavigationShell extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     required this.body,
+    this.maxWidth = 520,
     this.floatingActionButton,
     this.sidebarAction,
   });
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-
-    if (width >= AppBreakpoints.desktop) {
-      return _DesktopShell(
-        roleLabel: roleLabel,
-        destinations: destinations,
-        selectedIndex: selectedIndex,
-        onSelected: onSelected,
-        body: body,
-        floatingActionButton: floatingActionButton,
-        sidebarAction: sidebarAction,
-      );
-    }
-
-    if (width >= AppBreakpoints.tablet) {
-      return _TabletShell(
-        destinations: destinations,
-        selectedIndex: selectedIndex,
-        onSelected: onSelected,
-        body: body,
-        floatingActionButton: floatingActionButton,
-      );
-    }
-
     return _MobileShell(
       destinations: destinations,
       selectedIndex: selectedIndex,
       onSelected: onSelected,
       body: body,
+      maxWidth: maxWidth,
       floatingActionButton: floatingActionButton,
-    );
-  }
-}
-
-class _DesktopShell extends StatelessWidget {
-  final String roleLabel;
-  final List<AcademicNavDestination> destinations;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-  final Widget body;
-  final Widget? floatingActionButton;
-  final Widget? sidebarAction;
-
-  const _DesktopShell({
-    required this.roleLabel,
-    required this.destinations,
-    required this.selectedIndex,
-    required this.onSelected,
-    required this.body,
-    this.floatingActionButton,
-    this.sidebarAction,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      floatingActionButton: floatingActionButton,
-      body: SafeArea(
-        child: Row(
-          children: [
-            _Sidebar(
-              roleLabel: roleLabel,
-              destinations: destinations,
-              selectedIndex: selectedIndex,
-              onSelected: onSelected,
-              sidebarAction: sidebarAction,
-            ),
-            Expanded(child: body),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Sidebar extends StatelessWidget {
-  final String roleLabel;
-  final List<AcademicNavDestination> destinations;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-  final Widget? sidebarAction;
-
-  const _Sidebar({
-    required this.roleLabel,
-    required this.destinations,
-    required this.selectedIndex,
-    required this.onSelected,
-    this.sidebarAction,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 220,
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(right: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Brand mark
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: AppColors.navy,
-                    borderRadius: BorderRadius.circular(AppRadii.md),
-                  ),
-                  child: const Icon(
-                    LucideIcons.graduationCap,
-                    color: Colors.white,
-                    size: 15,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Iskolarium',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        roleLabel,
-                        style: AppTextStyles.meta,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          if (sidebarAction != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: sidebarAction!,
-            ),
-          ],
-
-          const Divider(height: 1, thickness: 1, color: AppColors.border),
-          const SizedBox(height: 6),
-
-          // Nav items
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              itemCount: destinations.length,
-              itemBuilder: (context, index) {
-                final item = destinations[index];
-                final active = index == selectedIndex;
-                return _SidebarItem(
-                  icon: item.icon,
-                  label: item.label,
-                  active: active,
-                  onTap: () => onSelected(index),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SidebarItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _SidebarItem({
-    required this.icon,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Material(
-        color: active ? AppColors.primaryLight : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppRadii.lg),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadii.lg),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 17,
-                  color: active ? AppColors.primary : AppColors.textSecondary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      color: active ? AppColors.primary : AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TabletShell extends StatelessWidget {
-  final List<AcademicNavDestination> destinations;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-  final Widget body;
-  final Widget? floatingActionButton;
-
-  const _TabletShell({
-    required this.destinations,
-    required this.selectedIndex,
-    required this.onSelected,
-    required this.body,
-    this.floatingActionButton,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      floatingActionButton: floatingActionButton,
-      body: SafeArea(
-        child: Row(
-          children: [
-            NavigationRail(
-              backgroundColor: AppColors.surface,
-              selectedIndex: selectedIndex,
-              onDestinationSelected: onSelected,
-              labelType: NavigationRailLabelType.all,
-              indicatorColor: AppColors.primaryLight,
-              selectedIconTheme: const IconThemeData(
-                color: AppColors.primary,
-                size: 20,
-              ),
-              unselectedIconTheme: const IconThemeData(
-                color: AppColors.textSecondary,
-                size: 20,
-              ),
-              selectedLabelTextStyle: const TextStyle(
-                color: AppColors.primary,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-              unselectedLabelTextStyle: AppTextStyles.meta,
-              destinations: destinations
-                  .map(
-                    (d) => NavigationRailDestination(
-                      icon: Icon(d.icon),
-                      label: Text(d.label),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
-            Expanded(child: body),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -890,6 +751,7 @@ class _MobileShell extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final Widget body;
+  final double maxWidth;
   final Widget? floatingActionButton;
 
   const _MobileShell({
@@ -897,37 +759,108 @@ class _MobileShell extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     required this.body,
+    required this.maxWidth,
     this.floatingActionButton,
   });
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isWide = width > 560;
+    final pageBackground = Theme.of(context).scaffoldBackgroundColor;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
-      floatingActionButton: floatingActionButton,
-      body: SafeArea(child: body),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: NavigationBar(
-          height: 62,
-          backgroundColor: AppColors.surface,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          indicatorColor: AppColors.primaryLight,
-          selectedIndex: selectedIndex,
-          onDestinationSelected: onSelected,
-          destinations: destinations
-              .map(
-                (d) => NavigationDestination(
-                  icon: Icon(d.icon, color: AppColors.textSecondary, size: 20),
-                  selectedIcon: Icon(d.icon, color: AppColors.primary, size: 20),
-                  label: d.label,
+      backgroundColor: isWide ? const Color(0xFFEEEDF5) : pageBackground,
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: pageBackground,
+                border: isWide
+                    ? const Border(
+                        left: BorderSide(color: AppColors.border),
+                        right: BorderSide(color: AppColors.border),
+                      )
+                    : null,
+                boxShadow: isWide
+                    ? [
+                        BoxShadow(
+                          color: AppColors.navy.withValues(alpha: 0.10),
+                          blurRadius: 32,
+                          offset: const Offset(0, 8),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Scaffold(
+                backgroundColor: pageBackground,
+                floatingActionButton: floatingActionButton,
+                body: body,
+                bottomNavigationBar: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppColors.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.08),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: NavigationBar(
+                        height: 64,
+                        backgroundColor: AppColors.surface,
+                        surfaceTintColor: Colors.transparent,
+                        elevation: 0,
+                        indicatorColor: AppColors.surfaceBlue,
+                        labelTextStyle: WidgetStateProperty.resolveWith(
+                          (states) => TextStyle(
+                            color: states.contains(WidgetState.selected)
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                            fontSize: 10.5,
+                            fontWeight: states.contains(WidgetState.selected)
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                        labelBehavior:
+                            NavigationDestinationLabelBehavior.alwaysShow,
+                        selectedIndex: selectedIndex,
+                        onDestinationSelected: onSelected,
+                        destinations: destinations
+                            .map(
+                              (d) => NavigationDestination(
+                                icon: Icon(
+                                  d.icon,
+                                  color: AppColors.textSecondary,
+                                  size: 21,
+                                ),
+                                selectedIcon: Icon(
+                                  d.icon,
+                                  color: AppColors.primary,
+                                  size: 21,
+                                ),
+                                label: d.label,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ),
                 ),
-              )
-              .toList(),
+              ),
+            ),
+          ),
         ),
       ),
     );

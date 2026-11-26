@@ -1,4 +1,5 @@
 import 'dart:math';
+
 import 'supabase_client_provider.dart';
 
 enum MeetingLocationType {
@@ -7,10 +8,10 @@ enum MeetingLocationType {
   tba;
 
   String get label => switch (this) {
-        MeetingLocationType.online => 'Online',
-        MeetingLocationType.roomNumber => 'Room Number',
-        MeetingLocationType.tba => 'TBA',
-      };
+    MeetingLocationType.online => 'Online',
+    MeetingLocationType.roomNumber => 'Room Number',
+    MeetingLocationType.tba => 'TBA',
+  };
 
   static MeetingLocationType fromRoom(String room) {
     final normalized = room.trim().toLowerCase();
@@ -60,6 +61,27 @@ class ClassMeetingSchedule {
       dayOfWeek.length >= 3 ? dayOfWeek.substring(0, 3) : dayOfWeek;
 
   bool get isValidTimeOrder => endMinutes > startMinutes;
+
+  DateTime nextOccurrenceAfter(DateTime reference) {
+    final daysUntil = (weekday - reference.weekday + 7) % 7;
+    var occurrence = DateTime(
+      reference.year,
+      reference.month,
+      reference.day + daysUntil,
+      startMinutes ~/ 60,
+      startMinutes % 60,
+    );
+    if (!occurrence.isAfter(reference)) {
+      occurrence = DateTime(
+        reference.year,
+        reference.month,
+        reference.day + daysUntil + 7,
+        startMinutes ~/ 60,
+        startMinutes % 60,
+      );
+    }
+    return occurrence;
+  }
 
   bool overlapsWith(ClassMeetingSchedule other) {
     if (dayOfWeek.toLowerCase() != other.dayOfWeek.toLowerCase()) return false;
@@ -118,8 +140,10 @@ class ClassMeetingSchedule {
     return ClassMeetingSchedule(
       id: map['id']?.toString(),
       classId: map['class_id']?.toString(),
-      dayOfWeek: normalizeDay((map['day_of_week'] ?? '').toString()) ?? 'Monday',
-      startMinutes: _parseSqlTime((map['start_time'] ?? '').toString()) ?? 8 * 60,
+      dayOfWeek:
+          normalizeDay((map['day_of_week'] ?? '').toString()) ?? 'Monday',
+      startMinutes:
+          _parseSqlTime((map['start_time'] ?? '').toString()) ?? 8 * 60,
       endMinutes: _parseSqlTime((map['end_time'] ?? '').toString()) ?? 9 * 60,
       room: (map['room'] ?? '').toString(),
     );
@@ -155,7 +179,8 @@ class ClassMeetingSchedule {
     final lower = raw.trim().toLowerCase();
     if (lower.isEmpty) return null;
     for (final d in daysOfWeek) {
-      if (lower == d.toLowerCase() || lower == d.toLowerCase().substring(0, 3)) {
+      if (lower == d.toLowerCase() ||
+          lower == d.toLowerCase().substring(0, 3)) {
         return d;
       }
     }
@@ -193,12 +218,14 @@ class ClassMeetingSchedule {
     if (sorted.length == 1) {
       return sorted.first.formattedTimeRange;
     }
-    return sorted.map((s) {
-      final r = s.room.trim();
-      return r.isEmpty
-          ? '${s.shortDay} ${s.formattedTimeRange}'
-          : '${s.shortDay} ${s.formattedTimeRange} @ $r';
-    }).join(' · ');
+    return sorted
+        .map((s) {
+          final r = s.room.trim();
+          return r.isEmpty
+              ? '${s.shortDay} ${s.formattedTimeRange}'
+              : '${s.shortDay} ${s.formattedTimeRange} @ $r';
+        })
+        .join(' · ');
   }
 
   static String encodeRoomSummary(List<ClassMeetingSchedule> schedules) {
@@ -256,10 +283,7 @@ class ClassMeetingSchedule {
     return null;
   }
 
-  static String? rowErrorText(
-    List<ClassMeetingSchedule> schedules,
-    int index,
-  ) {
+  static String? rowErrorText(List<ClassMeetingSchedule> schedules, int index) {
     final code = rowValidationIndexError(schedules, index);
     if (code == 1) return 'End time must be later than start time.';
     if (code == 2) {
@@ -278,8 +302,9 @@ class ClassMeetingSchedule {
   }) {
     final timeTrimmed = scheduleTime.trim();
     final dayTrimmed = scheduleDay.trim();
-    final fallbackRoom =
-        defaultRoom.trim() == 'Not specified' ? '' : defaultRoom.trim();
+    final fallbackRoom = defaultRoom.trim() == 'Not specified'
+        ? ''
+        : defaultRoom.trim();
     if (timeTrimmed.isEmpty && dayTrimmed.isEmpty) return const [];
 
     // Check if scheduleTime encodes per-day segments like
@@ -366,11 +391,15 @@ class ClassMeetingSchedule {
   static (int, int)? _parseTimeRange(String raw) {
     final cleaned = raw.trim();
     if (cleaned.isEmpty) return null;
-    final parts = cleaned.split(RegExp(r'\s*[-–—to]+\s*', caseSensitive: false));
+    final parts = cleaned.split(
+      RegExp(r'\s*[-–—to]+\s*', caseSensitive: false),
+    );
     if (parts.length != 2) return null;
 
-    final endPeriodMatch =
-        RegExp(r'\b(AM|PM)\b', caseSensitive: false).firstMatch(parts[1]);
+    final endPeriodMatch = RegExp(
+      r'\b(AM|PM)\b',
+      caseSensitive: false,
+    ).firstMatch(parts[1]);
     final fallbackPeriod = endPeriodMatch?.group(1);
 
     final start = _parseSingleTime(parts[0], fallbackPeriod: fallbackPeriod);
@@ -449,7 +478,9 @@ class OfficialClassRecord {
   }
 
   String get roomSummary {
-    final fromMeetings = ClassMeetingSchedule.encodeRoomSummary(effectiveSchedules);
+    final fromMeetings = ClassMeetingSchedule.encodeRoomSummary(
+      effectiveSchedules,
+    );
     if (fromMeetings.isNotEmpty) return fromMeetings;
     return room.trim().isEmpty ? 'Room TBA' : room.trim();
   }
@@ -489,7 +520,8 @@ class OfficialClassRecord {
       return list.any((s) => s.weekday == weekday);
     }
     if (weekday < 1 || weekday > 7) return false;
-    final todayName = ClassMeetingSchedule.daysOfWeek[weekday - 1].toLowerCase();
+    final todayName = ClassMeetingSchedule.daysOfWeek[weekday - 1]
+        .toLowerCase();
     final shortName = todayName.substring(0, 3);
     final sched = scheduleDay.toLowerCase();
     return sched.contains(todayName) || sched.contains(shortName);
@@ -577,12 +609,8 @@ class EnrollmentRecord {
 
   factory EnrollmentRecord.fromMap(Map<String, dynamic> map) {
     final profile = map['profiles'];
-    final name = profile is Map
-        ? (profile['full_name'] ?? '').toString()
-        : '';
-    final email = profile is Map
-        ? (profile['email'] ?? '').toString()
-        : '';
+    final name = profile is Map ? (profile['full_name'] ?? '').toString() : '';
+    final email = profile is Map ? (profile['email'] ?? '').toString() : '';
 
     return EnrollmentRecord(
       id: map['id'].toString(),
@@ -591,7 +619,8 @@ class EnrollmentRecord {
       studentName: name.isEmpty ? (email.isEmpty ? 'Student' : email) : name,
       studentEmail: email,
       status: (map['status'] ?? 'approved').toString().toLowerCase(),
-      enrolledAt: DateTime.tryParse((map['enrolled_at'] ?? '').toString()) ??
+      enrolledAt:
+          DateTime.tryParse((map['enrolled_at'] ?? '').toString()) ??
           DateTime.now(),
     );
   }
@@ -619,10 +648,10 @@ class PersonalClassRecord {
   });
 
   List<ClassMeetingSchedule> get schedules => ClassMeetingSchedule.parseLegacy(
-        scheduleDay,
-        scheduleTime,
-        defaultRoom: location,
-      );
+    scheduleDay,
+    scheduleTime,
+    defaultRoom: location,
+  );
 
   bool isScheduledOnWeekday(int weekday) {
     final list = schedules;
@@ -630,7 +659,8 @@ class PersonalClassRecord {
       return list.any((s) => s.weekday == weekday);
     }
     if (weekday < 1 || weekday > 7) return false;
-    final todayName = ClassMeetingSchedule.daysOfWeek[weekday - 1].toLowerCase();
+    final todayName = ClassMeetingSchedule.daysOfWeek[weekday - 1]
+        .toLowerCase();
     final shortName = todayName.substring(0, 3);
     final sched = scheduleDay.toLowerCase();
     return sched.contains(todayName) || sched.contains(shortName);
@@ -724,9 +754,8 @@ class ClassService {
     }).toList();
   }
 
-  static Future<Map<String, List<ClassMeetingSchedule>>> _loadSchedulesForClasses(
-    List<String> classIds,
-  ) async {
+  static Future<Map<String, List<ClassMeetingSchedule>>>
+  _loadSchedulesForClasses(List<String> classIds) async {
     if (classIds.isEmpty) return const {};
     try {
       final rows = await supabase
@@ -752,16 +781,38 @@ class ClassService {
     }
   }
 
+  static Future<List<ClassMeetingSchedule>> getClassSchedulesForAttendance(
+    String classId,
+  ) async {
+    if (classId.trim().isEmpty) throw Exception('Missing class ID.');
+
+    final schedulesByClass = await _loadSchedulesForClasses([classId]);
+    final storedSchedules = schedulesByClass[classId];
+    if (storedSchedules != null && storedSchedules.isNotEmpty) {
+      return storedSchedules;
+    }
+
+    final classRow = await supabase
+        .from('classes')
+        .select('schedule_day, schedule_time, room')
+        .eq('id', classId)
+        .maybeSingle();
+    if (classRow == null) throw Exception('Class schedule was not found.');
+
+    return ClassMeetingSchedule.parseLegacy(
+      (classRow['schedule_day'] ?? '').toString(),
+      (classRow['schedule_time'] ?? '').toString(),
+      defaultRoom: (classRow['room'] ?? '').toString(),
+    );
+  }
+
   static Future<List<ClassMeetingSchedule>> _replaceClassSchedules(
     String classId,
     List<ClassMeetingSchedule> schedules,
   ) async {
     final sorted = ClassMeetingSchedule.sortSchedules(schedules);
     try {
-      await supabase
-          .from('class_schedules')
-          .delete()
-          .eq('class_id', classId);
+      await supabase.from('class_schedules').delete().eq('class_id', classId);
       if (sorted.isEmpty) return const [];
 
       final inserted = await supabase
@@ -899,6 +950,17 @@ class ClassService {
         .eq('id', classId);
   }
 
+  static Future<void> deleteOfficialClass(String classId) async {
+    final deleted = await supabase
+        .from('classes')
+        .delete()
+        .eq('id', classId)
+        .select('id');
+    if (deleted.isEmpty) {
+      throw Exception('Class could not be deleted.');
+    }
+  }
+
   static Future<List<EnrollmentRecord>> getClassEnrollments(
     String classId,
   ) async {
@@ -932,10 +994,7 @@ class ClassService {
   }) async {
     await supabase.rpc(
       'instructor_enroll_student_by_email',
-      params: {
-        'p_class_id': classId,
-        'p_student_email': studentEmail.trim(),
-      },
+      params: {'p_class_id': classId, 'p_student_email': studentEmail.trim()},
     );
   }
 
@@ -985,13 +1044,16 @@ class ClassService {
         .toList();
   }
 
-  static Future<List<Map<String, dynamic>>> getStudentPendingEnrollments() async {
+  static Future<List<Map<String, dynamic>>>
+  getStudentPendingEnrollments() async {
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) throw Exception('Not signed in.');
 
     final rows = await supabase
         .from('enrollments')
-        .select('id, status, enrolled_at, classes(class_name, subject_code, section)')
+        .select(
+          'id, status, enrolled_at, classes(class_name, subject_code, section)',
+        )
         .eq('student_id', uid)
         .eq('status', 'pending')
         .order('enrolled_at', ascending: false);

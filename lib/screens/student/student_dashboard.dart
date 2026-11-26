@@ -1,11 +1,12 @@
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../../main.dart' show ClassDetailScreen, ClassItem;
 import '../../services/academic_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
 import '../../services/organizer_service.dart';
+import '../../services/supabase_client_provider.dart';
 import '../../src/app_colors.dart';
 import '../../src/design_system.dart';
 
@@ -20,6 +21,7 @@ class StudentDashboard extends StatefulWidget {
   final VoidCallback onOpenStudySessions;
   final VoidCallback onOpenAttendance;
   final VoidCallback onOpenScores;
+  final VoidCallback onAddTask;
   final VoidCallback onRefresh;
 
   const StudentDashboard({
@@ -30,12 +32,13 @@ class StudentDashboard extends StatefulWidget {
     required this.onOpenStudySessions,
     required this.onOpenAttendance,
     required this.onOpenScores,
+    required this.onAddTask,
     required this.onRefresh,
   });
 
   // Shared application color palette.
   static const Color primaryBlue = AppColors.primary;
-  static const Color darkBlue = AppColors.navy;
+  static const Color darkBlue = AppColors.textPrimary;
   static const Color navy = AppColors.textPrimary;
   static const Color muted = AppColors.textSecondary;
   static const Color background = AppColors.background;
@@ -48,17 +51,18 @@ class StudentDashboard extends StatefulWidget {
 
 class _StudentDashboardState extends State<StudentDashboard> {
   static const Color primaryBlue = StudentDashboard.primaryBlue;
-  static const Color navy = StudentDashboard.navy;
-  static const Color muted = StudentDashboard.muted;
   static const Color border = StudentDashboard.border;
 
   String _studentName = 'Student';
-  int _classCount = 0;
-  int _tasksDueCount = 0;
   int _attendancePercent = 0;
   int _unreadNotifications = 0;
+  int _activeCourseCount = 0;
+  DateTime? _attendanceProgressDate;
   List<_TodayMeetingEntry> _todayClasses = const [];
-  StudentTaskRecord? _nextDeadline;
+  List<StudentTaskRecord> _dashboardTasks = const [];
+  List<ClassAssignmentRecord> _classAssignments = const [];
+  Set<String> _completedTaskIds = {};
+  String? _assignmentLoadError;
 
   @override
   void initState() {
@@ -72,6 +76,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
       final official = await ClassService.getStudentApprovedClasses();
       final personal = await ClassService.getStudentPersonalClasses();
       final tasks = await OrganizerService.getTasks();
+      List<ClassAssignmentRecord> assignments = const [];
+      String? assignmentLoadError;
+      try {
+        assignments = await AcademicService.getStudentAssignments();
+      } catch (error) {
+        assignmentLoadError = formatSupabaseError(error);
+      }
       final attendance = await AcademicService.getStudentAttendance();
       final notifications = await OrganizerService.getNotifications();
 
@@ -123,8 +134,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
             .where((m) => m.weekday == todayWeekday)
             .toList();
         if (meetings.isNotEmpty) {
-          final instructorLabel =
-              p.instructorName.isEmpty ? 'Personal Class' : p.instructorName;
+          final instructorLabel = p.instructorName.isEmpty
+              ? 'Personal Course'
+              : p.instructorName;
           final classItem = ClassItem(
             id: p.id,
             code: p.subjectCode,
@@ -141,9 +153,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           for (final m in meetings) {
             final room = m.room.trim().isNotEmpty
                 ? m.room.trim()
-                : (p.location.trim().isEmpty
-                    ? 'Personal'
-                    : p.location.trim());
+                : (p.location.trim().isEmpty ? 'Personal' : p.location.trim());
             todayRows.add(
               _TodayMeetingEntry(
                 classItem: classItem,
@@ -169,27 +179,94 @@ class _StudentDashboardState extends State<StudentDashboard> {
         return a.subjectName.compareTo(b.subjectName);
       });
 
-      final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
       final presentCount = attendance
           .where((a) => a.status == 'present' || a.status == 'late')
           .length;
       final pct = attendance.isEmpty
           ? 0
           : ((presentCount / attendance.length) * 100).round();
-
+      final attendanceProgressDate = _mostRecentDate(
+        attendance.map((record) => record.attendanceDate),
+      );
       if (!mounted) return;
       setState(() {
         _studentName = profile?.fullName.isNotEmpty == true
             ? profile!.fullName
             : 'Student';
-        _classCount = official.length + personal.length;
-        _tasksDueCount = pendingTasks.length;
         _attendancePercent = pct;
+        _activeCourseCount = official.length + personal.length;
+        _attendanceProgressDate = attendanceProgressDate;
         _unreadNotifications = notifications.where((n) => n.isUnread).length;
         _todayClasses = todayRows;
-        _nextDeadline = pendingTasks.isNotEmpty ? pendingTasks.first : null;
+        _dashboardTasks = tasks;
+        _classAssignments = assignments;
+        _assignmentLoadError = assignmentLoadError;
+        _completedTaskIds = tasks
+            .where((task) => task.isCompleted)
+            .map((task) => task.id)
+            .toSet();
       });
     } catch (_) {}
+  }
+
+  Future<void> _toggleTask(StudentTaskRecord task) async {
+    final wasCompleted = _completedTaskIds.contains(task.id);
+    final isCompleted = !wasCompleted;
+
+    setState(() {
+      if (isCompleted) {
+        _completedTaskIds.add(task.id);
+      } else {
+        _completedTaskIds.remove(task.id);
+      }
+    });
+
+    try {
+      await OrganizerService.toggleTaskCompleted(task.id, isCompleted);
+      widget.onRefresh();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          if (wasCompleted) {
+            _completedTaskIds.add(task.id);
+          } else {
+            _completedTaskIds.remove(task.id);
+          }
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(formatSupabaseError(error))));
+      }
+    }
+  }
+
+  DateTime? _mostRecentDate(Iterable<DateTime?> dates) {
+    DateTime? latest;
+    for (final date in dates) {
+      if (date != null && (latest == null || date.isAfter(latest))) {
+        latest = date;
+      }
+    }
+    return latest;
+  }
+
+  String? _formatProgressDate(DateTime? date) {
+    if (date == null) return null;
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final localDate = date.toLocal();
+    return '${months[localDate.month - 1]} ${localDate.day}';
   }
 
   String getGreeting() {
@@ -240,7 +317,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: AppColors.surfaceSoft,
       body: SafeArea(
         child: RefreshIndicator(
           color: primaryBlue,
@@ -249,162 +326,57 @@ class _StudentDashboardState extends State<StudentDashboard> {
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
-            padding: const EdgeInsets.only(bottom: 96),
+            padding: const EdgeInsets.only(bottom: 76),
             child: ResponsiveContainer(
+              key: const ValueKey('student-dashboard-container'),
+              maxWidth: double.infinity,
+              padding: EdgeInsets.zero,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AcademicPageHeader(
-                    eyebrow: getFormattedDate(),
-                    title: '${getGreeting()}, $_studentName',
-                    subtitle: 'Classes, tasks, attendance, and grades at a glance.',
-                    actions: [
-                      _DashboardNotificationButton(
-                        onPressed: widget.onOpenNotifications,
-                        hasUnread: _unreadNotifications > 0,
-                      ),
-                    ],
-                  ),
-                  SurfacePanel(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // OVERVIEW TITLE
-                        const Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Academic Overview',
-                                style: TextStyle(
-                                  color: navy,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              'THIS WEEK',
-                              style: TextStyle(
-                                color: muted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.6,
-                              ),
-                            ),
-                          ],
+                  _buildDashboardHeader(),
+                  Transform.translate(
+                    offset: const Offset(0, -20),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                      decoration: const BoxDecoration(
+                        color: AppColors.surfaceSoft,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(28),
                         ),
-                        const SizedBox(height: 14),
-
-                        // RESPONSIVE SUMMARY CARDS
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            const spacing = 10.0;
-                            final columns = constraints.maxWidth >= 640 ? 4 : 2;
-                            final cardWidth =
-                                (constraints.maxWidth - spacing * (columns - 1)) /
-                                    columns;
-
-                            return Wrap(
-                              spacing: spacing,
-                              runSpacing: spacing,
-                              children: [
-                                SizedBox(
-                                  width: cardWidth,
-                                  child: _DashboardSummaryCard(
-                                    icon: LucideIcons.bookOpen,
-                                    value: '$_classCount',
-                                    label: 'Classes',
-                                    accentColor: AppColors.primary,
-                                    accentLight: AppColors.primaryLight,
-                                    onTap: widget.onOpenClasses,
-                                    ),
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 960),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _DashboardSectionTitle(title: "Today's Classes"),
+                              const SizedBox(height: 12),
+                              if (_todayClasses.isEmpty)
+                                _NoClassesCard(onAdd: widget.onOpenClasses)
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 13,
+                                    vertical: 4,
                                   ),
-                                  SizedBox(
-                                    width: cardWidth,
-                                    child: _DashboardSummaryCard(
-                                      icon: LucideIcons.clipboardList,
-                                      value: '$_tasksDueCount',
-                                      label: 'Tasks Due',
-                                      accentColor: AppColors.warning,
-                                      accentLight: AppColors.warningLight,
-                                      onTap: widget.onOpenTasks,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: cardWidth,
-                                    child: _DashboardSummaryCard(
-                                      icon: LucideIcons.chartNoAxesColumnIncreasing,
-                                      value: '$_attendancePercent%',
-                                      label: 'Attendance',
-                                      accentColor: AppColors.success,
-                                      accentLight: AppColors.successLight,
-                                      onTap: widget.onOpenAttendance,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: cardWidth,
-                                    child: _DashboardSummaryCard(
-                                      icon: LucideIcons.graduationCap,
-                                      value: 'View',
-                                      label: 'My Scores',
-                                      accentColor: AppColors.study,
-                                      accentLight: AppColors.studyLight,
-                                      onTap: widget.onOpenScores,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-
-                          const SizedBox(height: 27),
-
-                          // TODAY'S CLASSES
-                          _DashboardSectionTitle(
-                            title: "Today's Classes",
-                            action: 'See all',
-                            onTap: widget.onOpenClasses,
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 13,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(17),
-                              border: Border.all(color: border),
-                            ),
-                            child: _todayClasses.isEmpty
-                                ? const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: 20,
-                                      horizontal: 4,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          LucideIcons.calendarOff,
-                                          size: 18,
-                                          color: muted,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: border),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.navy.withValues(
+                                          alpha: 0.03,
                                         ),
-                                        SizedBox(width: 10),
-                                        Expanded(
-                                          child: Text(
-                                            'No classes scheduled for today.',
-                                            style: TextStyle(
-                                              color: muted,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : Column(
+                                        blurRadius: 14,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
                                     children: List.generate(
                                       _todayClasses.length,
                                       (i) {
@@ -419,9 +391,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                                   MaterialPageRoute(
                                                     builder: (_) =>
                                                         ClassDetailScreen(
-                                                      classItem:
-                                                          entry.classItem,
-                                                    ),
+                                                          classItem:
+                                                              entry.classItem,
+                                                        ),
                                                   ),
                                                 );
                                               },
@@ -436,56 +408,102 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                       },
                                     ),
                                   ),
-                          ),
-
-                          const SizedBox(height: 26),
-
-                          // UPCOMING DEADLINE
-                          _DashboardSectionTitle(
-                            title: 'Upcoming Deadline',
-                            action: 'View tasks',
-                            onTap: widget.onOpenTasks,
-                          ),
-                          const SizedBox(height: 12),
-                          if (_nextDeadline == null)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: AppColors.surface,
-                                borderRadius: BorderRadius.circular(17),
-                                border: Border.all(color: border),
+                                ),
+                              const SizedBox(height: 24),
+                              _DashboardSectionTitle(
+                                title: 'Academic Progress',
                               ),
-                              child: const Text(
-                                'No upcoming deadlines.',
-                                style: TextStyle(color: muted, fontSize: 13),
+                              const SizedBox(height: 12),
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final compact = constraints.maxWidth < 420;
+                                  return Row(
+                                    children: [
+                                      Expanded(
+                                        child: _AcademicProgressCard(
+                                          label: 'Attendance',
+                                          value: '$_attendancePercent%',
+                                          emphasizeValue: true,
+                                          dateLabel: _formatProgressDate(
+                                            _attendanceProgressDate,
+                                          ),
+                                          onTap: widget.onOpenAttendance,
+                                        ),
+                                      ),
+                                      SizedBox(width: compact ? 10 : 12),
+                                      Expanded(
+                                        child: _AcademicProgressCard(
+                                          label: 'Grades',
+                                          value: 'View Records',
+                                          subtitle:
+                                              '$_activeCourseCount active courses',
+                                          showChevron: true,
+                                          onTap: widget.onOpenScores,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
-                            )
-                          else
-                            _UpcomingDeadlineCard(
-                              task: _nextDeadline!,
-                              onTap: widget.onOpenTasks,
-                            ),
-
-                          const SizedBox(height: 26),
-
-                          // STUDY TOOLS
-                          const Text(
-                            'Study Tools',
-                            style: TextStyle(
-                              color: navy,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.3,
-                            ),
+                              const SizedBox(height: 24),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: _DashboardSectionTitle(
+                                      title: 'Upcoming Deadlines',
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: widget.onAddTask,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.primary,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '+ Add task',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (_assignmentLoadError != null) ...[
+                                AsyncErrorView(
+                                  message: _assignmentLoadError!,
+                                  onRetry: _loadDashboard,
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              if (_dashboardTasks.isEmpty &&
+                                  _classAssignments.isEmpty &&
+                                  _assignmentLoadError == null)
+                                const _NoDeadlinesCard()
+                              else ...[
+                                for (final assignment in _classAssignments)
+                                  _DashboardAssignmentCard(
+                                    assignment: assignment,
+                                    onTap: widget.onOpenTasks,
+                                  ),
+                                for (final task in _dashboardTasks)
+                                  _DashboardTaskCard(
+                                    task: task,
+                                    isCompleted: _completedTaskIds.contains(
+                                      task.id,
+                                    ),
+                                    onToggle: () => _toggleTask(task),
+                                  ),
+                              ],
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          _StudySessionsCard(
-                            onTap: widget.onOpenStudySessions,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
@@ -494,156 +512,63 @@ class _StudentDashboardState extends State<StudentDashboard> {
       ),
     );
   }
-}
 
-// ============================================================
-// NOTIFICATION BUTTON
-// ============================================================
-
-class _DashboardNotificationButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool hasUnread;
-
-  const _DashboardNotificationButton({
-    required this.onPressed,
-    this.hasUnread = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.13),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: 47,
-          height: 47,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.25),
-            ),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Icon(
-                LucideIcons.bell,
-                color: Colors.white,
-                size: 23,
-              ),
-              Positioned(
-                top: 9,
-                right: 10,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: AppColors.danger,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: StudentDashboard.darkBlue,
-                      width: 1,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+  Widget _buildDashboardHeader() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF173156), Color(0xFF2C5388)],
         ),
       ),
-    );
-  }
-}
-
-// ============================================================
-// SUMMARY CARD
-// ============================================================
-
-class _DashboardSummaryCard extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final VoidCallback? onTap;
-  final Color accentColor;
-  final Color accentLight;
-
-  const _DashboardSummaryCard({
-    required this.icon,
-    required this.value,
-    required this.label,
-    required this.accentColor,
-    required this.accentLight,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 120),
-          padding: const EdgeInsets.symmetric(
-            vertical: 13,
-            horizontal: 4,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: AppColors.border,
+      child: ResponsiveContainer(
+        maxWidth: 960,
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 40),
+        child: Row(
+          key: const ValueKey('student-dashboard-header'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    getFormattedDate().toUpperCase(),
+                    style: const TextStyle(
+                      color: Color(0xFFDCE7F5),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${getGreeting()}, $_studentName',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Here’s your academic overview.',
+                    style: TextStyle(color: Color(0xFFDCE7F5), fontSize: 13),
+                  ),
+                ],
+              ),
             ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 37,
-                height: 37,
-                decoration: BoxDecoration(
-                  color: accentLight,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: accentColor,
-                  size: 19,
-                ),
-              ),
-              const SizedBox(height: 9),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  value,
-                  style: const TextStyle(
-                    color: StudentDashboard.navy,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    color: StudentDashboard.muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            const SizedBox(width: AppSpacing.md),
+            DashboardNotificationButton(
+              onPressed: widget.onOpenNotifications,
+              unreadCount: _unreadNotifications,
+              isDarkHeader: true,
+            ),
+          ],
         ),
       ),
     );
@@ -656,60 +581,85 @@ class _DashboardSummaryCard extends StatelessWidget {
 
 class _DashboardSectionTitle extends StatelessWidget {
   final String title;
-  final String action;
-  final VoidCallback onTap;
 
-  const _DashboardSectionTitle({
-    required this.title,
-    required this.action,
-    required this.onTap,
-  });
+  const _DashboardSectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: StudentDashboard.navy,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
+    return Text(title, style: AppTextStyles.sectionHeading);
+  }
+}
+
+class _NoClassesCard extends StatelessWidget {
+  final VoidCallback onAdd;
+
+  const _NoClassesCard({required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.infoBorder),
+            ),
+            child: const Icon(
+              LucideIcons.calendar,
+              size: 20,
+              color: AppColors.primary,
             ),
           ),
-        ),
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 5,
-              horizontal: 3,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('No classes today', style: AppTextStyles.cardHeading),
+                SizedBox(height: 3),
                 Text(
-                  action,
-                  style: const TextStyle(
-                    color: StudentDashboard.primaryBlue,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(
-                  LucideIcons.arrowRight,
-                  color: StudentDashboard.primaryBlue,
-                  size: 13,
+                  'Enjoy your free day or review notes.',
+                  style: AppTextStyles.meta,
                 ),
               ],
             ),
           ),
-        ),
-      ],
+          const SizedBox(width: 6),
+          TextButton(
+            onPressed: onAdd,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              backgroundColor: AppColors.primaryLight,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: AppColors.infoBorder),
+              ),
+            ),
+            child: const Text(
+              '+ Add',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -759,10 +709,7 @@ class _DashboardScheduleRow extends StatelessWidget {
   final _TodayMeetingEntry entry;
   final VoidCallback onTap;
 
-  const _DashboardScheduleRow({
-    required this.entry,
-    required this.onTap,
-  });
+  const _DashboardScheduleRow({required this.entry, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -773,18 +720,18 @@ class _DashboardScheduleRow extends StatelessWidget {
     final badgeBg = isOngoing
         ? AppColors.primary
         : isUpcoming
-            ? AppColors.primaryLight
-            : AppColors.surfaceSoft;
+        ? AppColors.primaryLight
+        : AppColors.surfaceSoft;
     final badgeFg = isOngoing
         ? Colors.white
         : isUpcoming
-            ? StudentDashboard.primaryBlue
-            : StudentDashboard.muted;
+        ? StudentDashboard.primaryBlue
+        : StudentDashboard.muted;
     final badgeText = isOngoing
         ? 'ONGOING'
         : isUpcoming
-            ? 'UPCOMING'
-            : 'ENDED';
+        ? 'UPCOMING'
+        : 'ENDED';
 
     return InkWell(
       onTap: onTap,
@@ -798,23 +745,9 @@ class _DashboardScheduleRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    entry.startTimeLabel,
-                    style: const TextStyle(
-                      color: StudentDashboard.navy,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text(entry.startTimeLabel, style: AppTextStyles.bodyMedium),
                   const SizedBox(height: 2),
-                  Text(
-                    entry.endTimeLabel,
-                    style: const TextStyle(
-                      color: StudentDashboard.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  Text(entry.endTimeLabel, style: AppTextStyles.meta),
                 ],
               ),
             ),
@@ -860,9 +793,9 @@ class _DashboardScheduleRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: StudentDashboard.navy,
+                            color: AppColors.textPrimary,
                             fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -911,32 +844,222 @@ class _DashboardScheduleRow extends StatelessWidget {
   }
 }
 
-// ============================================================
-// UPCOMING DEADLINE CARD
-// ============================================================
+class _NoDeadlinesCard extends StatelessWidget {
+  const _NoDeadlinesCard();
 
-class _UpcomingDeadlineCard extends StatelessWidget {
-  final StudentTaskRecord task;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          Icon(LucideIcons.circleCheck, color: AppColors.success, size: 22),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('All caught up!', style: AppTextStyles.cardHeading),
+                SizedBox(height: 3),
+                Text(
+                  'No pending tasks or deadlines right now.',
+                  style: AppTextStyles.meta,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardAssignmentCard extends StatelessWidget {
+  final ClassAssignmentRecord assignment;
   final VoidCallback onTap;
 
-  const _UpcomingDeadlineCard({
-    required this.task,
+  const _DashboardAssignmentCard({
+    required this.assignment,
     required this.onTap,
   });
 
-  String get _badgeText {
-    final s = task.subject.trim();
-    if (s.isEmpty) return 'TSK';
-    final words = s.split(RegExp(r'\s+'));
-    if (words.length >= 2) {
-      return '${words[0][0]}${words[1][0]}'.toUpperCase();
-    }
-    return s.substring(0, s.length >= 2 ? 2 : 1).toUpperCase();
-  }
+  @override
+  Widget build(BuildContext context) {
+    final course = assignment.subjectCode.trim().isNotEmpty
+        ? assignment.subjectCode
+        : assignment.className;
 
-  String get _dueLabel {
-    final due = task.dueAt;
-    if (due == null) return 'No due date';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.navy.withValues(alpha: 0.03),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        assignment.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.cardHeading,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$course · Class Assignment',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.meta,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _DueDatePill(date: assignment.dueAt),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardTaskCard extends StatelessWidget {
+  final StudentTaskRecord task;
+  final bool isCompleted;
+  final VoidCallback onToggle;
+
+  const _DashboardTaskCard({
+    required this.task,
+    required this.isCompleted,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.navy.withValues(alpha: 0.03),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Checkbox(
+              value: isCompleted,
+              activeColor: AppColors.primary,
+              visualDensity: VisualDensity.compact,
+              onChanged: (_) => onToggle(),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      decoration: isCompleted
+                          ? TextDecoration.lineThrough
+                          : null,
+                      color: isCompleted
+                          ? AppColors.textMuted
+                          : AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${task.subject.trim().isEmpty ? 'General' : task.subject} · Personal Task',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.meta,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _DueDatePill(date: task.dueAt),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DueDatePill extends StatelessWidget {
+  final DateTime? date;
+
+  const _DueDatePill({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final dueAt = date;
+    final dateText = dueAt == null
+        ? 'No due date'
+        : 'Due ${_StudentDashboardDateFormat.shortDate(dueAt)}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        dateText,
+        style: const TextStyle(
+          color: AppColors.primary,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentDashboardDateFormat {
+  static String shortDate(DateTime date) {
     const months = [
       'Jan',
       'Feb',
@@ -951,188 +1074,98 @@ class _UpcomingDeadlineCard extends StatelessWidget {
       'Nov',
       'Dec',
     ];
-    return 'Due ${months[due.month - 1]} ${due.day}, ${due.year}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.warningLight,
-      borderRadius: BorderRadius.circular(17),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(17),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(
-              color: AppColors.warningBorder,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 47,
-                height: 47,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Center(
-                  child: Text(
-                    _badgeText,
-                    style: const TextStyle(
-                      color: AppColors.warningDark,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: StudentDashboard.navy,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      task.subject.isEmpty ? 'General' : task.subject,
-                      style: const TextStyle(
-                        color: StudentDashboard.muted,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(
-                          LucideIcons.clock,
-                          color: AppColors.warning,
-                          size: 13,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _dueLabel,
-                          style: const TextStyle(
-                            color: AppColors.warningDark,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(
-                LucideIcons.chevronRight,
-                color: StudentDashboard.muted,
-                size: 21,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final local = date.toLocal();
+    return '${months[local.month - 1]} ${local.day}';
   }
 }
 
 // ============================================================
-// STUDY SESSIONS CARD
+// ACADEMIC PROGRESS CARD
 // ============================================================
 
-class _StudySessionsCard extends StatelessWidget {
+class _AcademicProgressCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final String? dateLabel;
+  final String? subtitle;
+  final bool showChevron;
+  final bool emphasizeValue;
   final VoidCallback onTap;
 
-  const _StudySessionsCard({
+  const _AcademicProgressCard({
+    required this.label,
+    required this.value,
+    this.dateLabel,
+    this.subtitle,
+    this.showChevron = false,
+    this.emphasizeValue = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.studyLight,
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(17),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(17),
         child: Container(
-          padding: const EdgeInsets.all(15),
+          constraints: const BoxConstraints(minHeight: 108),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(17),
-            border: Border.all(
-              color: AppColors.studyBorder,
-            ),
+            border: Border.all(color: AppColors.border),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  LucideIcons.timer,
-                  color: AppColors.study,
-                  size: 23,
-                ),
-              ),
-              const SizedBox(width: 13),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Study Sessions',
-                      style: TextStyle(
-                        color: StudentDashboard.navy,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 5),
-                    Text(
-                      'Plan focused study time and track your progress.',
-                      maxLines: 2,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: StudentDashboard.muted,
-                        fontSize: 10,
-                        height: 1.4,
-                      ),
+                      style: AppTextStyles.meta,
                     ),
-                    SizedBox(height: 7),
+                  ),
+                  if (dateLabel != null)
                     Text(
-                      'Open study planner',
-                      style: TextStyle(
-                        color: AppColors.study,
+                      dateLabel!,
+                      maxLines: 1,
+                      style: AppTextStyles.meta.copyWith(
+                        color: AppColors.textMuted,
                         fontSize: 10,
-                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ],
+                  if (showChevron)
+                    const Icon(
+                      LucideIcons.chevronRight,
+                      size: 16,
+                      color: AppColors.textMuted,
+                    ),
+                ],
+              ),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: emphasizeValue ? 24 : 17,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1,
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(
-                LucideIcons.chevronRight,
-                color: StudentDashboard.muted,
-                size: 21,
-              ),
+              if (subtitle != null)
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.meta.copyWith(fontSize: 10.5),
+                ),
             ],
           ),
         ),

@@ -1,4 +1,3 @@
-
 part of '../main.dart';
 
 // ============================================================
@@ -21,7 +20,7 @@ class ScreenHeading extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onAction,
-    this.actionIcon = Icons.add,
+    this.actionIcon = LucideIcons.plus,
   });
 
   @override
@@ -68,11 +67,7 @@ class ScreenHeading extends StatelessWidget {
                 child: SizedBox(
                   width: 44,
                   height: 44,
-                  child: Icon(
-                    actionIcon,
-                    color: AppColors.primary,
-                    size: 21,
-                  ),
+                  child: Icon(actionIcon, color: AppColors.primary, size: 21),
                 ),
               ),
             ),
@@ -120,10 +115,7 @@ class SectionTitle extends StatelessWidget {
               onTap: onTap,
               borderRadius: BorderRadius.circular(8),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                 child: Text(
                   action,
                   style: const TextStyle(
@@ -165,17 +157,13 @@ class OutlineCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark
-              ? const Color(0xFF414852)
-              : AppColors.border,
+          color: isDark ? const Color(0xFF414852) : AppColors.border,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.navy.withValues(
-              alpha: isDark ? 0.08 : 0.035,
-            ),
+            color: AppColors.navy.withValues(alpha: isDark ? 0.08 : 0.035),
             blurRadius: 14,
             offset: const Offset(0, 4),
           ),
@@ -288,16 +276,11 @@ class SemanticBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: backgroundColor ?? color.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: borderColor ?? color.withValues(alpha: 0.20),
-        ),
+        border: Border.all(color: borderColor ?? color.withValues(alpha: 0.20)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -355,7 +338,7 @@ class SemanticActionButton extends StatelessWidget {
       label: label,
       onPressed: onPressed,
       color: AppColors.danger,
-      icon: Icons.delete_outline_rounded,
+      icon: LucideIcons.trash2,
       filled: false,
       compact: compact,
     );
@@ -391,7 +374,7 @@ class SemanticActionButton extends StatelessWidget {
       label: label,
       onPressed: onPressed,
       color: AppColors.success,
-      icon: icon ?? Icons.check_circle_outline_rounded,
+      icon: icon ?? LucideIcons.circleCheck,
       filled: false,
       compact: compact,
     );
@@ -403,12 +386,10 @@ class SemanticActionButton extends StatelessWidget {
 
     return Material(
       color: filled
-          ? (isDisabled
-              ? AppColors.disabled
-              : color)
+          ? (isDisabled ? AppColors.disabled : color)
           : (isDisabled
-              ? AppColors.surfaceSoft
-              : color.withValues(alpha: 0.08)),
+                ? AppColors.surfaceSoft
+                : color.withValues(alpha: 0.08)),
       borderRadius: BorderRadius.circular(11),
       child: InkWell(
         onTap: onPressed,
@@ -564,9 +545,7 @@ class SummaryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: accentColor.withValues(alpha: 0.055),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: accentColor.withValues(alpha: 0.16),
-        ),
+        border: Border.all(color: accentColor.withValues(alpha: 0.16)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,11 +564,7 @@ class SummaryCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Icon(
-              icon,
-              size: 18,
-              color: accentColor,
-            ),
+            child: Icon(icon, size: 18, color: accentColor),
           ),
           const Spacer(),
           Text(
@@ -699,13 +674,10 @@ class HomeScheduleRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           if (isNow)
-             SemanticBadge.success(
-              label: 'Now',
-              icon: Icons.radio_button_checked,
-            )
+            SemanticBadge.success(label: 'Now', icon: LucideIcons.circleDot)
           else
             const Icon(
-              Icons.chevron_right,
+              LucideIcons.chevronRight,
               color: AppColors.textMuted,
               size: 20,
             ),

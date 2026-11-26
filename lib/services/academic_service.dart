@@ -8,10 +8,11 @@ class AttendanceRecord {
   final String instructorName;
   final String studentId;
   final String studentName;
-  final DateTime attendanceDate;
+  final DateTime? attendanceDate;
   final String status; // present, absent, late, excused
   final String? scheduleId;
   final String meetingKey;
+  final String remarks;
 
   const AttendanceRecord({
     required this.id,
@@ -25,6 +26,7 @@ class AttendanceRecord {
     required this.status,
     this.scheduleId,
     this.meetingKey = '',
+    this.remarks = '',
   });
 
   factory AttendanceRecord.fromMap(Map<String, dynamic> map) {
@@ -37,17 +39,20 @@ class AttendanceRecord {
       classId: map['class_id'].toString(),
       className: cls is Map ? (cls['class_name'] ?? '').toString() : '',
       subjectCode: cls is Map ? (cls['subject_code'] ?? '').toString() : '',
-      instructorName:
-          inst is Map ? (inst['full_name'] ?? 'Instructor').toString() : '',
+      instructorName: inst is Map
+          ? (inst['full_name'] ?? 'Instructor').toString()
+          : '',
       studentId: map['student_id'].toString(),
-      studentName:
-          student is Map ? (student['full_name'] ?? 'Student').toString() : '',
-      attendanceDate:
-          DateTime.tryParse((map['attendance_date'] ?? '').toString()) ??
-              DateTime.now(),
+      studentName: student is Map
+          ? (student['full_name'] ?? 'Student').toString()
+          : '',
+      attendanceDate: DateTime.tryParse(
+        (map['attendance_date'] ?? '').toString(),
+      ),
       status: (map['status'] ?? 'present').toString().toLowerCase(),
       scheduleId: map['schedule_id']?.toString(),
       meetingKey: (map['meeting_key'] ?? '').toString(),
+      remarks: (map['remarks'] ?? '').toString(),
     );
   }
 }
@@ -67,7 +72,8 @@ class ScoreRecord {
   final double score;
   final double maxScore;
   final String status; // pending, released
-  final DateTime createdAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const ScoreRecord({
     required this.id,
@@ -85,6 +91,7 @@ class ScoreRecord {
     required this.maxScore,
     this.status = 'released',
     required this.createdAt,
+    this.updatedAt,
   });
 
   double get percentage => maxScore > 0 ? (score / maxScore) * 100.0 : 0.0;
@@ -99,11 +106,13 @@ class ScoreRecord {
       classId: map['class_id'].toString(),
       className: cls is Map ? (cls['class_name'] ?? '').toString() : '',
       subjectCode: cls is Map ? (cls['subject_code'] ?? '').toString() : '',
-      instructorName:
-          inst is Map ? (inst['full_name'] ?? 'Instructor').toString() : '',
+      instructorName: inst is Map
+          ? (inst['full_name'] ?? 'Instructor').toString()
+          : '',
       studentId: map['student_id'].toString(),
-      studentName:
-          student is Map ? (student['full_name'] ?? 'Student').toString() : '',
+      studentName: student is Map
+          ? (student['full_name'] ?? 'Student').toString()
+          : '',
       assignmentId: map['assignment_id']?.toString(),
       quizId: map['quiz_id']?.toString(),
       assessmentName: (map['assessment_name'] ?? '').toString(),
@@ -111,8 +120,8 @@ class ScoreRecord {
       score: (map['score'] as num?)?.toDouble() ?? 0,
       maxScore: (map['max_score'] as num?)?.toDouble() ?? 100,
       status: (map['status'] ?? 'released').toString().toLowerCase(),
-      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()) ??
-          DateTime.now(),
+      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()),
+      updatedAt: DateTime.tryParse((map['updated_at'] ?? '').toString()),
     );
   }
 }
@@ -125,6 +134,8 @@ class AttendanceSessionRecord {
   final DateTime sessionDate;
   final String meetingLabel;
   final String room;
+  final String instructorId;
+  final DateTime? createdAt;
 
   const AttendanceSessionRecord({
     required this.id,
@@ -134,19 +145,88 @@ class AttendanceSessionRecord {
     required this.sessionDate,
     this.meetingLabel = '',
     this.room = '',
+    this.instructorId = '',
+    this.createdAt,
   });
 
   factory AttendanceSessionRecord.fromMap(Map<String, dynamic> map) {
+    final sessionDate = DateTime.tryParse(
+      (map['session_date'] ?? '').toString(),
+    );
+    if (sessionDate == null) {
+      throw const FormatException('Attendance session has no valid date.');
+    }
     return AttendanceSessionRecord(
       id: map['id'].toString(),
       classId: map['class_id'].toString(),
       scheduleId: map['schedule_id']?.toString(),
       meetingKey: (map['meeting_key'] ?? '').toString(),
-      sessionDate:
-          DateTime.tryParse((map['session_date'] ?? '').toString()) ??
-              DateTime.now(),
+      sessionDate: sessionDate,
       meetingLabel: (map['meeting_label'] ?? '').toString(),
       room: (map['room'] ?? '').toString(),
+      instructorId: (map['instructor_id'] ?? '').toString(),
+      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()),
+    );
+  }
+}
+
+class AttendanceCorrectionRecord {
+  final String id;
+  final String sessionId;
+  final String attendanceId;
+  final String studentId;
+  final String studentName;
+  final String action;
+  final String? oldStatus;
+  final String newStatus;
+  final String oldRemarks;
+  final String newRemarks;
+  final String reason;
+  final String correctedBy;
+  final String correctedByName;
+  final DateTime correctedAt;
+
+  const AttendanceCorrectionRecord({
+    required this.id,
+    required this.sessionId,
+    required this.attendanceId,
+    required this.studentId,
+    required this.studentName,
+    required this.action,
+    required this.oldStatus,
+    required this.newStatus,
+    required this.oldRemarks,
+    required this.newRemarks,
+    required this.reason,
+    required this.correctedBy,
+    required this.correctedByName,
+    required this.correctedAt,
+  });
+
+  factory AttendanceCorrectionRecord.fromMap(Map<String, dynamic> map) {
+    final profile = map['profiles'];
+    final editor = map['editor'];
+    return AttendanceCorrectionRecord(
+      id: map['id'].toString(),
+      sessionId: map['session_id'].toString(),
+      attendanceId: map['attendance_id'].toString(),
+      studentId: map['student_id'].toString(),
+      studentName: profile is Map
+          ? (profile['full_name'] ?? 'Student').toString()
+          : 'Student',
+      action: (map['action'] ?? 'correction').toString(),
+      oldStatus: map['old_status']?.toString(),
+      newStatus: (map['new_status'] ?? '').toString(),
+      oldRemarks: (map['old_remarks'] ?? '').toString(),
+      newRemarks: (map['new_remarks'] ?? '').toString(),
+      reason: (map['correction_reason'] ?? '').toString(),
+      correctedBy: (map['corrected_by'] ?? '').toString(),
+      correctedByName: editor is Map
+          ? (editor['full_name'] ?? 'Instructor').toString()
+          : 'Instructor',
+      correctedAt:
+          DateTime.tryParse((map['corrected_at'] ?? '').toString()) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
     );
   }
 }
@@ -189,12 +269,14 @@ class AnnouncementRecord {
       className: cls is Map ? (cls['class_name'] ?? '').toString() : '',
       subjectCode: cls is Map ? (cls['subject_code'] ?? '').toString() : '',
       section: cls is Map ? (cls['section'] ?? 'Section A').toString() : '',
-      instructorName:
-          inst is Map ? (inst['full_name'] ?? 'Instructor').toString() : '',
+      instructorName: inst is Map
+          ? (inst['full_name'] ?? 'Instructor').toString()
+          : '',
       title: (map['title'] ?? '').toString(),
       content: (map['content'] ?? '').toString(),
       isArchived: map['is_archived'] == true,
-      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()) ??
+      createdAt:
+          DateTime.tryParse((map['created_at'] ?? '').toString()) ??
           DateTime.now(),
     );
   }
@@ -208,6 +290,11 @@ class AcademicService {
     final m = date.month.toString().padLeft(2, '0');
     final d = date.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  static DateTime get manilaToday {
+    final manilaNow = DateTime.now().toUtc().add(const Duration(hours: 8));
+    return DateTime.utc(manilaNow.year, manilaNow.month, manilaNow.day);
   }
 
   // ---------------- ATTENDANCE ----------------
@@ -299,104 +386,248 @@ class AcademicService {
     required String classId,
     required DateTime date,
     required Map<String, String> studentStatuses,
+    Map<String, String> studentRemarks = const {},
     String? scheduleId,
     String? meetingKey,
     String meetingLabel = '',
     String room = '',
   }) async {
-    final uid = supabase.auth.currentUser?.id;
-    if (uid == null) throw Exception('Not signed in.');
-
-    final dateStr = _isoDate(date);
-    final nowIso = DateTime.now().toUtc().toIso8601String();
-    final mKey = (meetingKey ?? '').trim();
-    final schedId =
-        (scheduleId != null && scheduleId.trim().isNotEmpty) ? scheduleId.trim() : null;
-
-    if (studentStatuses.isEmpty) return;
-
-    // Prefer atomic transactional RPC when migration 008 is applied.
-    try {
-      await supabase.rpc(
-        'save_attendance_session',
-        params: {
-          'p_class_id': classId,
-          'p_attendance_date': dateStr,
-          'p_schedule_id': schedId,
-          'p_meeting_key': mKey,
-          'p_meeting_label': meetingLabel.trim(),
-          'p_room': room.trim(),
-          'p_records': studentStatuses.entries
-              .map(
-                (e) => {
-                  'student_id': e.key,
-                  'status': e.value.toLowerCase(),
-                },
-              )
-              .toList(),
-        },
-      );
-      return;
-    } catch (_) {
-      // Fall back to direct upsert if RPC isn't deployed yet.
+    if (supabase.auth.currentUser == null) throw Exception('Not signed in.');
+    if (studentStatuses.isEmpty) {
+      throw Exception('Attendance must include at least one student.');
     }
+    final dateStr = _isoDate(date);
+    final mKey = (meetingKey ?? '').trim();
+    final schedId = (scheduleId != null && scheduleId.trim().isNotEmpty)
+        ? scheduleId.trim()
+        : null;
 
-    final payload = studentStatuses.entries
+    final result = await supabase.rpc(
+      'save_attendance_session',
+      params: {
+        'p_class_id': classId,
+        'p_attendance_date': dateStr,
+        'p_schedule_id': schedId,
+        'p_meeting_key': mKey,
+        'p_meeting_label': meetingLabel.trim(),
+        'p_room': room.trim(),
+        'p_records': _attendancePayload(studentStatuses, studentRemarks),
+      },
+    );
+    if (result is! String || result.isEmpty) {
+      throw Exception('Supabase did not confirm the attendance session.');
+    }
+    return;
+  }
+
+  static List<Map<String, dynamic>> _attendancePayload(
+    Map<String, String> statuses,
+    Map<String, String> remarks,
+  ) {
+    return statuses.entries
         .map(
           (entry) => {
-            'class_id': classId,
             'student_id': entry.key,
-            'marked_by': uid,
-            'attendance_date': dateStr,
             'status': entry.value.toLowerCase(),
-            'meeting_key': mKey,
-            if (schedId != null) 'schedule_id': schedId,
-            'updated_at': nowIso,
+            'remarks': (remarks[entry.key] ?? '').trim(),
           },
         )
         .toList();
-
-    try {
-      await supabase.from('attendance').upsert(
-            payload,
-            onConflict: 'class_id,student_id,attendance_date,meeting_key',
-          );
-    } catch (_) {
-      final legacyPayload = studentStatuses.entries
-          .map(
-            (entry) => {
-              'class_id': classId,
-              'student_id': entry.key,
-              'marked_by': uid,
-              'attendance_date': dateStr,
-              'status': entry.value.toLowerCase(),
-              'updated_at': nowIso,
-            },
-          )
-          .toList();
-      await supabase.from('attendance').upsert(
-            legacyPayload,
-            onConflict: 'class_id,student_id,attendance_date',
-          );
-    }
   }
 
   static Future<List<AttendanceSessionRecord>> getClassAttendanceSessions(
     String classId,
   ) async {
-    try {
-      final rows = await supabase
-          .from('attendance_sessions')
-          .select('*')
-          .eq('class_id', classId)
-          .order('session_date', ascending: false);
+    final rows = await supabase
+        .from('attendance_sessions')
+        .select('*')
+        .eq('class_id', classId)
+        .order('session_date', ascending: false)
+        .order('created_at', ascending: false);
 
-      return List<Map<String, dynamic>>.from(rows)
-          .map(AttendanceSessionRecord.fromMap)
-          .toList();
-    } catch (_) {
-      return const [];
+    return List<Map<String, dynamic>>.from(rows)
+        .map(AttendanceSessionRecord.fromMap)
+        .toList();
+  }
+
+  static Future<List<AttendanceSessionRecord>>
+  getRecentInstructorAttendanceSessions({
+    required List<String> classIds,
+    int lookbackDays = 14,
+    int limit = 30,
+  }) async {
+    if (classIds.isEmpty) return const [];
+
+    final instructorId = supabase.auth.currentUser?.id;
+    if (instructorId == null) throw Exception('Not signed in.');
+
+    final since = DateTime.now()
+        .toUtc()
+        .subtract(Duration(days: lookbackDays))
+        .toIso8601String();
+    final rows = await supabase
+        .from('attendance_sessions')
+        .select('*')
+        .eq('instructor_id', instructorId)
+        .inFilter('class_id', classIds)
+        .gte('created_at', since)
+        .order('created_at', ascending: false)
+        .limit(limit);
+
+    return List<Map<String, dynamic>>.from(rows)
+        .map(AttendanceSessionRecord.fromMap)
+        .toList();
+  }
+
+  static Future<Map<String, Map<String, int>>> getAttendanceSessionSummaries({
+    required String classId,
+    required List<String> sessionIds,
+  }) async {
+    if (sessionIds.isEmpty) return const {};
+
+    final rows = await supabase
+        .from('attendance')
+        .select('session_id, status')
+        .eq('class_id', classId)
+        .inFilter('session_id', sessionIds);
+
+    final summaries = <String, Map<String, int>>{};
+    for (final row in List<Map<String, dynamic>>.from(rows)) {
+      final sessionId = row['session_id']?.toString();
+      if (sessionId == null || sessionId.isEmpty) continue;
+
+      final status = (row['status'] ?? '').toString().toLowerCase();
+      final counts = summaries.putIfAbsent(sessionId, () => <String, int>{});
+      counts[status] = (counts[status] ?? 0) + 1;
     }
+    return summaries;
+  }
+
+  static Future<List<AttendanceSessionRecord>> getClassAttendanceSessionsOn(
+    String classId,
+    DateTime date,
+  ) async {
+    final rows = await supabase
+        .from('attendance_sessions')
+        .select('*')
+        .eq('class_id', classId)
+        .eq('session_date', _isoDate(date))
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows)
+        .map(AttendanceSessionRecord.fromMap)
+        .toList();
+  }
+
+  static AttendanceSessionRecord? findAttendanceSessionForMeeting({
+    required List<AttendanceSessionRecord> sessions,
+    required String meetingKey,
+    required String? scheduleId,
+    required bool hasSingleScheduledMeeting,
+  }) {
+    final normalizedMeetingKey = meetingKey.trim();
+    for (final session in sessions) {
+      if (normalizedMeetingKey.isNotEmpty &&
+          session.meetingKey.trim() == normalizedMeetingKey) {
+        return session;
+      }
+      if (scheduleId != null && session.scheduleId == scheduleId) {
+        return session;
+      }
+    }
+
+    if (hasSingleScheduledMeeting &&
+        sessions.length == 1 &&
+        sessions.single.meetingKey.trim().isEmpty &&
+        sessions.single.scheduleId == null) {
+      return sessions.single;
+    }
+    return null;
+  }
+
+  static Future<List<AttendanceRecord>> getAttendanceSessionRecords(
+    String sessionId,
+  ) async {
+    final rows = await supabase
+        .from('attendance')
+        .select('*, profiles!attendance_student_id_fkey(full_name)')
+        .eq('session_id', sessionId)
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(rows)
+        .map(AttendanceRecord.fromMap)
+        .toList();
+  }
+
+  static Future<List<AttendanceCorrectionRecord>>
+  getAttendanceCorrectionHistory(String sessionId) async {
+    final rows = await supabase
+        .from('attendance_correction_audit')
+        .select(
+          '*, profiles!attendance_correction_audit_student_id_fkey(full_name), '
+          'editor:profiles!attendance_correction_audit_corrected_by_fkey(full_name)',
+        )
+        .eq('session_id', sessionId)
+        .order('corrected_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows)
+        .map(AttendanceCorrectionRecord.fromMap)
+        .toList();
+  }
+
+  static Future<void> correctAttendanceSession({
+    required String sessionId,
+    required String reason,
+    required Map<String, String> studentStatuses,
+    required Map<String, String> studentRemarks,
+  }) async {
+    if (reason.trim().isEmpty) {
+      throw Exception('A correction reason is required.');
+    }
+    if (studentStatuses.isEmpty) {
+      throw Exception('Attendance correction has no student records.');
+    }
+    await supabase.rpc(
+      'correct_attendance_session',
+      params: {
+        'p_session_id': sessionId,
+        'p_correction_reason': reason.trim(),
+        'p_records': _attendancePayload(studentStatuses, studentRemarks),
+      },
+    );
+  }
+
+  static Future<String> recordMissedAttendanceSession({
+    required String classId,
+    required DateTime date,
+    required String correctionReason,
+    required Map<String, String> studentStatuses,
+    required Map<String, String> studentRemarks,
+    String? scheduleId,
+    String? meetingKey,
+    String meetingLabel = '',
+    String room = '',
+  }) async {
+    if (correctionReason.trim().isEmpty) {
+      throw Exception('A correction reason is required.');
+    }
+    if (studentStatuses.isEmpty) {
+      throw Exception('Attendance must include at least one student.');
+    }
+    final result = await supabase.rpc(
+      'record_missed_attendance_session',
+      params: {
+        'p_class_id': classId,
+        'p_attendance_date': _isoDate(date),
+        'p_schedule_id': scheduleId,
+        'p_meeting_key': (meetingKey ?? '').trim(),
+        'p_meeting_label': meetingLabel.trim(),
+        'p_room': room.trim(),
+        'p_correction_reason': correctionReason.trim(),
+        'p_records': _attendancePayload(studentStatuses, studentRemarks),
+      },
+    );
+    if (result is! String || result.isEmpty) {
+      throw Exception('Supabase did not confirm the correction session.');
+    }
+    return result;
   }
 
   static Future<List<AttendanceRecord>> getStudentAttendance({
@@ -462,9 +693,7 @@ class AcademicService {
     final payload = <Map<String, dynamic>>[];
     for (final entry in studentScores.entries) {
       if (entry.value < 0 || entry.value > maxScore) {
-        throw Exception(
-          'Score must be between 0 and $maxScore.',
-        );
+        throw Exception('Score must be between 0 and $maxScore.');
       }
       payload.add({
         'class_id': classId,
@@ -495,12 +724,10 @@ class AcademicService {
             'p_assessment_name': trimmedName,
             'p_category': normalizedCategory,
             'p_max_score': maxScore,
-            'p_assignment_id':
-                (assignmentId != null && assignmentId.isNotEmpty)
-                    ? assignmentId
-                    : null,
-            'p_quiz_id':
-                (quizId != null && quizId.isNotEmpty) ? quizId : null,
+            'p_assignment_id': (assignmentId != null && assignmentId.isNotEmpty)
+                ? assignmentId
+                : null,
+            'p_quiz_id': (quizId != null && quizId.isNotEmpty) ? quizId : null,
             'p_status': status,
             'p_scores': studentScores.entries
                 .map((e) => {'student_id': e.key, 'score': e.value})
@@ -517,7 +744,8 @@ class AcademicService {
     final existing = await getClassScores(classId);
     final existingByStudent = <String, ScoreRecord>{};
     for (final r in existing) {
-      final matchesLink = (assignmentId != null &&
+      final matchesLink =
+          (assignmentId != null &&
               assignmentId.isNotEmpty &&
               r.assignmentId == assignmentId) ||
           (quizId != null && quizId.isNotEmpty && r.quizId == quizId) ||
@@ -681,6 +909,25 @@ class AcademicService {
         .toList();
   }
 
+  static Future<List<AnnouncementRecord>> getClassAnnouncements(
+    String classId,
+  ) async {
+    if (classId.trim().isEmpty) return const [];
+
+    final rows = await supabase
+        .from('announcements')
+        .select(
+          '*, classes(class_name, subject_code, section), profiles!announcements_instructor_id_fkey(full_name)',
+        )
+        .eq('class_id', classId)
+        .eq('is_archived', false)
+        .order('created_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(rows)
+        .map(AnnouncementRecord.fromMap)
+        .toList();
+  }
+
   // ---------------- CLASS ASSIGNMENTS ----------------
 
   /// Returns all non-archived assignments for a specific class.
@@ -695,7 +942,11 @@ class AcademicService {
     if (!includeArchived) {
       query = query.eq('is_archived', false);
     }
-    final rows = await query.order('due_at', ascending: true, nullsFirst: false);
+    final rows = await query.order(
+      'due_at',
+      ascending: true,
+      nullsFirst: false,
+    );
 
     return List<Map<String, dynamic>>.from(rows)
         .map(ClassAssignmentRecord.fromMap)
@@ -744,11 +995,7 @@ class AcademicService {
     try {
       final row = await supabase
           .from('class_assignments')
-          .insert({
-            ...basePayload,
-            'category': cleanCat,
-            'max_score': maxScore,
-          })
+          .insert({...basePayload, 'category': cleanCat, 'max_score': maxScore})
           .select('*, classes(class_name, subject_code, section)')
           .single();
       return ClassAssignmentRecord.fromMap(row);
@@ -788,11 +1035,7 @@ class AcademicService {
     try {
       final row = await supabase
           .from('class_assignments')
-          .update({
-            ...basePayload,
-            'category': cleanCat,
-            'max_score': maxScore,
-          })
+          .update({...basePayload, 'category': cleanCat, 'max_score': maxScore})
           .eq('id', id)
           .select('*, classes(class_name, subject_code, section)')
           .single();
@@ -999,7 +1242,8 @@ class ClassAssignmentRecord {
           ? null
           : double.tryParse(map['max_score'].toString()),
       isArchived: map['is_archived'] == true,
-      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()) ??
+      createdAt:
+          DateTime.tryParse((map['created_at'] ?? '').toString()) ??
           DateTime.now(),
     );
   }
@@ -1037,9 +1281,10 @@ class QuizRecord {
       instructions: (map['instructions'] ?? '').toString(),
       maxScore: double.tryParse((map['max_score'] ?? '100').toString()) ?? 100,
       opensAt: DateTime.tryParse((map['opens_at'] ?? '').toString())?.toLocal(),
-      closesAt:
-          DateTime.tryParse((map['closes_at'] ?? '').toString())?.toLocal(),
-      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()) ??
+      closesAt: DateTime.tryParse((map['closes_at'] ?? '').toString())
+          ?.toLocal(),
+      createdAt:
+          DateTime.tryParse((map['created_at'] ?? '').toString()) ??
           DateTime.now(),
     );
   }
@@ -1072,7 +1317,8 @@ class LearningMaterialRecord {
       title: (map['title'] ?? '').toString(),
       description: (map['description'] ?? '').toString(),
       externalUrl: map['external_url']?.toString(),
-      createdAt: DateTime.tryParse((map['created_at'] ?? '').toString()) ??
+      createdAt:
+          DateTime.tryParse((map['created_at'] ?? '').toString()) ??
           DateTime.now(),
     );
   }

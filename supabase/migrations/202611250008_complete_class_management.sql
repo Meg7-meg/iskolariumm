@@ -28,12 +28,12 @@ CREATE POLICY class_schedules_student_select
 
 -- Backfill existing class schedules if class_schedules is empty for the existing class
 INSERT INTO public.class_schedules (class_id, day_of_week, start_time, end_time, location_type, room)
-SELECT '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid, 'Monday', '08:00:00'::time, '10:00:00'::time, 'room_number', 'room 2'
+SELECT '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid, 'Monday', '08:00:00'::time, '10:00:00'::time, 'room', 'room 2'
 WHERE EXISTS (SELECT 1 FROM public.classes WHERE id = '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid)
   AND NOT EXISTS (SELECT 1 FROM public.class_schedules WHERE class_id = '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid);
 
 INSERT INTO public.class_schedules (class_id, day_of_week, start_time, end_time, location_type, room)
-SELECT '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid, 'Wednesday', '15:00:00'::time, '17:00:00'::time, 'room_number', 'room 4'
+SELECT '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid, 'Wednesday', '15:00:00'::time, '17:00:00'::time, 'room', 'room 4'
 WHERE EXISTS (SELECT 1 FROM public.classes WHERE id = '54b16f1b-7682-4a6d-b32b-b2181d529324'::uuid)
   AND NOT EXISTS (
     SELECT 1 FROM public.class_schedules

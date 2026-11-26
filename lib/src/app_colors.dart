@@ -23,35 +23,39 @@ class AppColors {
   // BRAND IDENTITY
   // ----------------------------------------------------------
 
-  /// Primary Navy — headers, wordmark, high-authority elements
-  static const Color navy = Color(0xFF172B4D);
-  static const Color navyLight = Color(0xFF243956);
+  /// Deep blue — headings and branded moments
+  static const Color navy = Color(0xFF173156);
+  static const Color navyLight = Color(0xFF2C5388);
 
   /// Academic Blue — primary interactive color, links, CTAs
-  static const Color primary = Color(0xFF3157A4);
-  static const Color primaryDark = Color(0xFF254A8C);
-  static const Color primaryLight = Color(0xFFEBF0F9);
-  static const Color primarySoft = Color(0xFFF4F7FC);
+  static const Color primary = Color(0xFF2C5388);
+  static const Color primaryDark = Color(0xFF173156);
+  static const Color steelBlue = Color(0xFF7DAFC8);
+  static const Color primaryLight = Color(0xFFF3F7FC);
+  static const Color primarySoft = Color(0xFFF8FAFC);
 
   // ----------------------------------------------------------
   // BACKGROUNDS AND SURFACES
   // ----------------------------------------------------------
 
-  static const Color background = Color(0xFFF7F8FA);
+  static const Color background = Color(0xFFF8FAFC);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceSoft = Color(0xFFF1F4F8);
-  static const Color surfaceBlue = Color(0xFFEBF0F9);
+  static const Color surfaceSoft = Color(0xFFF4F6F9);
+  static const Color surfaceBlue = Color(0xFFEEF4FB);
+  static const Color softLavender = Color(0xFFE9E6FA);
+  static const Color softPeach = Color(0xFFFCEBDD);
+  static const Color softMint = Color(0xFFDFF3E9);
 
-  static const Color border = Color(0xFFE5E9EF);
-  static const Color divider = Color(0xFFE5E9EF);
+  static const Color border = Color(0xFFE5ECF6);
+  static const Color divider = Color(0xFFE5ECF6);
 
   // ----------------------------------------------------------
   // TYPOGRAPHY
   // ----------------------------------------------------------
 
-  static const Color textPrimary = Color(0xFF202938);
-  static const Color textSecondary = Color(0xFF8A94A6);
-  static const Color textMuted = Color(0xFF9BA5B7);
+  static const Color textPrimary = Color(0xFF111827);
+  static const Color textSecondary = Color(0xFF6B7280);
+  static const Color textMuted = Color(0xFF9CA3AF);
   static const Color textOnPrimary = Color(0xFFFFFFFF);
 
   // ----------------------------------------------------------
@@ -85,19 +89,19 @@ class AppColors {
   // INFORMATION — ANNOUNCEMENTS / UPDATES
   // ----------------------------------------------------------
 
-  static const Color info = Color(0xFF3157A4);
-  static const Color infoDark = Color(0xFF254A8C);
-  static const Color infoLight = Color(0xFFEBF0F9);
-  static const Color infoBorder = Color(0xFFBDD0F0);
+  static const Color info = Color(0xFF2C5388);
+  static const Color infoDark = Color(0xFF173156);
+  static const Color infoLight = Color(0xFFF3F7FC);
+  static const Color infoBorder = Color(0xFFC9DCF4);
 
   // ----------------------------------------------------------
   // STUDY — FOCUS / STUDY SESSIONS
   // ----------------------------------------------------------
 
-  static const Color study = Color(0xFF6B4FBB);
-  static const Color studyDark = Color(0xFF5540A0);
-  static const Color studyLight = Color(0xFFF2EEFA);
-  static const Color studyBorder = Color(0xFFD4C8F0);
+  static const Color study = Color(0xFF2C5388);
+  static const Color studyDark = Color(0xFF173156);
+  static const Color studyLight = Color(0xFFF3F7FC);
+  static const Color studyBorder = Color(0xFFC9DCF4);
 
   // ----------------------------------------------------------
   // SECONDARY ACCENT — TEAL
@@ -121,8 +125,8 @@ class AppColors {
   static const Color attendanceLate = warning;
   static const Color attendanceLateLight = warningLight;
 
-  static const Color attendanceExcused = Color(0xFF3157A4);
-  static const Color attendanceExcusedLight = Color(0xFFEBF0F9);
+  static const Color attendanceExcused = Color(0xFF2C5388);
+  static const Color attendanceExcusedLight = Color(0xFFF3F7FC);
 
   // ----------------------------------------------------------
   // TASK AND DEADLINE STATUS
@@ -144,8 +148,8 @@ class AppColors {
   static const Color scoreExcellent = Color(0xFF269B75);
   static const Color scoreExcellentLight = Color(0xFFEDF7F4);
 
-  static const Color scoreGood = Color(0xFF3157A4);
-  static const Color scoreGoodLight = Color(0xFFEBF0F9);
+  static const Color scoreGood = Color(0xFF2C5388);
+  static const Color scoreGoodLight = Color(0xFFF3F7FC);
 
   static const Color scoreAverage = Color(0xFFD99A35);
   static const Color scoreAverageLight = Color(0xFFFDF5E6);
@@ -168,13 +172,13 @@ class AppColors {
   // ----------------------------------------------------------
 
   static const List<Color> primaryGradient = [
-    Color(0xFF3157A4),
-    Color(0xFF254A8C),
+    Color(0xFF173156),
+    Color(0xFF2C5388),
   ];
 
   static const List<Color> studyGradient = [
-    Color(0xFF7B63CC),
-    Color(0xFF5540A0),
+    Color(0xFF173156),
+    Color(0xFF2C5388),
   ];
 
   static const List<Color> successGradient = [

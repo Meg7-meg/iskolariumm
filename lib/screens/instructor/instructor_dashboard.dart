@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../main.dart';
 import '../../services/academic_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
@@ -13,9 +15,11 @@ import '../../src/design_system.dart';
 import '../../widgets/class_schedule_editor.dart';
 
 import 'take_attendance.dart';
+import 'attendance_history_screen.dart';
 import 'enter_scores.dart';
 import 'instructor_profile.dart';
 import 'instructor_announcements_screen.dart';
+import 'instructor_notifications_screen.dart';
 
 // ============================================================
 // INSTRUCTOR DASHBOARD
@@ -24,14 +28,10 @@ import 'instructor_announcements_screen.dart';
 class InstructorDashboard extends StatefulWidget {
   final int initialIndex;
 
-  const InstructorDashboard({
-    super.key,
-    this.initialIndex = 0,
-  });
+  const InstructorDashboard({super.key, this.initialIndex = 0});
 
   @override
-  State<InstructorDashboard> createState() =>
-      _InstructorDashboardState();
+  State<InstructorDashboard> createState() => _InstructorDashboardState();
 }
 
 class _InstructorDashboardState extends State<InstructorDashboard> {
@@ -46,21 +46,50 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
   late int selectedIndex;
 
   String searchQuery = '';
-  bool showTodayOnly = false;
   bool showArchived = false;
   bool isLoading = true;
   String? loadError;
+  DateTime? _selectedScheduleDate;
+  Timer? _dateRefreshTimer;
 
   UserProfile? _profile;
   List<OfficialClassRecord> _classes = [];
   Map<String, int> _todayAttendanceCounts = const {};
   Map<String, int> _classAssessmentCounts = const {};
+  List<InstructorNotificationItem> _instructorNotifications = const [];
+  final Set<String> _readInstructorNotificationIds = {};
+  bool _notificationsLoading = true;
+  String? _notificationsLoadError;
+  String? _notificationsAttendanceWarning;
+  int _notificationsLoadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     selectedIndex = widget.initialIndex.clamp(0, 3);
+    _scheduleDateRefresh();
     _loadDashboardData();
+  }
+
+  void _scheduleDateRefresh() {
+    final nowUtc = DateTime.now().toUtc();
+    final manilaNow = nowUtc.add(const Duration(hours: 8));
+    final nextManilaMidnight = DateTime.utc(
+      manilaNow.year,
+      manilaNow.month,
+      manilaNow.day + 1,
+    );
+    _dateRefreshTimer = Timer(nextManilaMidnight.difference(manilaNow), () {
+      if (!mounted) return;
+      unawaited(_loadDashboardData());
+      _scheduleDateRefresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dateRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDashboardData() async {
@@ -76,11 +105,13 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
       final classes = await ClassService.getInstructorClasses(
         includeArchived: showArchived,
       );
-      final classIds =
-          classes.where((c) => !c.isArchived).map((c) => c.id).toList();
+      final classIds = classes
+          .where((c) => !c.isArchived)
+          .map((c) => c.id)
+          .toList();
       final attendanceCounts = await AcademicService.getAttendanceCountsForDate(
         classIds: classIds,
-        date: DateTime.now(),
+        date: AcademicService.manilaToday,
       );
 
       final assessmentCounts = <String, int>{};
@@ -107,6 +138,14 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
         _classAssessmentCounts = assessmentCounts;
         isLoading = false;
       });
+      unawaited(
+        _refreshInstructorNotifications(classes).catchError(
+          (_) => InstructorNotificationLoadResult(
+            notifications: _instructorNotifications,
+            attendanceWarning: _notificationsAttendanceWarning,
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -116,29 +155,127 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
     }
   }
 
+  Future<InstructorNotificationLoadResult> _refreshInstructorNotifications([
+    List<OfficialClassRecord>? classes,
+  ]) async {
+    final generation = ++_notificationsLoadGeneration;
+    if (mounted) {
+      setState(() {
+        _notificationsLoading = true;
+        _notificationsLoadError = null;
+        _notificationsAttendanceWarning = null;
+      });
+    }
+
+    try {
+      final result = await InstructorNotificationService.load(
+        classes ?? _classes,
+      );
+      if (mounted && generation == _notificationsLoadGeneration) {
+        setState(() {
+          _instructorNotifications = result.notifications;
+          _notificationsAttendanceWarning = result.attendanceWarning;
+          _notificationsLoading = false;
+          _notificationsLoadError = null;
+        });
+      }
+      return result;
+    } catch (error) {
+      if (mounted && generation == _notificationsLoadGeneration) {
+        setState(() {
+          _notificationsLoading = false;
+          _notificationsLoadError = formatSupabaseError(error);
+        });
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _openInstructorNotifications() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InstructorNotificationsScreen(
+          initialNotifications: _instructorNotifications,
+          initialAttendanceWarning: _notificationsAttendanceWarning,
+          isLoading: _notificationsLoading,
+          loadError: _notificationsLoadError,
+          readIds: _readInstructorNotificationIds,
+          onRefresh: () => _refreshInstructorNotifications(),
+          onNotificationsChanged: (result) {
+            if (!mounted) return;
+            setState(() {
+              _instructorNotifications = result.notifications;
+              _notificationsAttendanceWarning = result.attendanceWarning;
+            });
+          },
+          onMarkAsRead: (id) {
+            if (!_readInstructorNotificationIds.add(id) || !mounted) return;
+            setState(() {});
+          },
+          onOpen: _openInstructorNotification,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openInstructorNotification(
+    InstructorNotificationItem notification,
+  ) async {
+    OfficialClassRecord? record;
+    for (final item in _classes) {
+      if (item.id == notification.classId) {
+        record = item;
+        break;
+      }
+    }
+    if (record == null) {
+      showMessage('This class is no longer available.');
+      return;
+    }
+
+    switch (notification.type) {
+      case InstructorNotificationType.classReminder:
+        await _openClassDetails(record);
+      case InstructorNotificationType.enrollmentRequest:
+        await _openManageEnrollmentsSheet(record);
+      case InstructorNotificationType.attendanceUpdate:
+        await _openAttendanceHistory(
+          _classToMap(record),
+          sessionId: notification.sessionId,
+        );
+    }
+  }
+
   List<_InstructorTodayMeeting> get _todayMeetings {
-    final todayWeekday = DateTime.now().weekday;
+    return _meetingsForWeekday(AcademicService.manilaToday.weekday);
+  }
+
+  List<_InstructorTodayMeeting> _meetingsForWeekday(int weekday) {
     final list = <_InstructorTodayMeeting>[];
 
     for (final c in _classes.where((c) => !c.isArchived)) {
-      for (final m in c.effectiveSchedules) {
-        if (m.weekday == todayWeekday) {
-          final mKey = (m.id != null && m.id!.isNotEmpty)
-              ? m.id!
-              : '${m.dayOfWeek}_${m.startMinutes}_${m.endMinutes}';
-          final exactCount = _todayAttendanceCounts['${c.id}|$mKey'] ?? 0;
-          final legacyCount = _todayAttendanceCounts['${c.id}|'] ?? 0;
-          final recordedCount = exactCount > 0 ? exactCount : legacyCount;
+      final daySchedules = c.effectiveSchedules
+          .where((meeting) => meeting.weekday == weekday)
+          .toList();
+      for (final m in daySchedules) {
+        final mKey = (m.id != null && m.id!.isNotEmpty)
+            ? m.id!
+            : '${m.dayOfWeek}_${m.startMinutes}_${m.endMinutes}';
+        final exactCount = _todayAttendanceCounts['${c.id}|$mKey'] ?? 0;
+        final legacyCount = daySchedules.length == 1
+            ? _todayAttendanceCounts['${c.id}|'] ?? 0
+            : 0;
+        final recordedCount = exactCount > 0 ? exactCount : legacyCount;
 
-          list.add(
-            _InstructorTodayMeeting(
-              record: c,
-              meeting: m,
-              meetingKey: mKey,
-              recordedCount: recordedCount,
-            ),
-          );
-        }
+        list.add(
+          _InstructorTodayMeeting(
+            record: c,
+            meeting: m,
+            meetingKey: mKey,
+            recordedCount: recordedCount,
+          ),
+        );
       }
     }
 
@@ -152,10 +289,245 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
     return list;
   }
 
-  List<Map<String, String>> get assignedClasses => _classes
-      .where((c) => !c.isArchived)
-      .map(_classToMap)
-      .toList();
+  List<DateTime> get _currentWeekDates {
+    final today = AcademicService.manilaToday;
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final monday = todayDate.subtract(Duration(days: todayDate.weekday - 1));
+    return List<DateTime>.generate(
+      7,
+      (index) => monday.add(Duration(days: index)),
+    );
+  }
+
+  Future<void> _showSchedulePreview(DateTime date) async {
+    final selectedDate = DateTime(date.year, date.month, date.day);
+    final meetings = _meetingsForWeekday(selectedDate.weekday);
+    final classCount = meetings.map((item) => item.record.id).toSet().length;
+
+    setState(() => _selectedScheduleDate = selectedDate);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final formattedDate = MaterialLocalizations.of(sheetContext)
+            .formatFullDate(selectedDate);
+
+        return FractionallySizedBox(
+          heightFactor: 0.78,
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ClassMeetingSchedule
+                                .daysOfWeek[selectedDate.weekday - 1],
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            formattedDate,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$classCount ${classCount == 1 ? 'class' : 'classes'}',
+                        style: const TextStyle(
+                          color: AppColors.primaryDark,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Close schedule',
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(
+                        LucideIcons.x,
+                        color: AppColors.textSecondary,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: meetings.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceSoft,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: AppColors.border),
+                                ),
+                                child: const Icon(
+                                  LucideIcons.calendarDays,
+                                  color: AppColors.textSecondary,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No classes scheduled',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'There are no classes for this day.',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: EdgeInsets.zero,
+                          itemCount: meetings.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final item = meetings[index];
+                            final record = item.record;
+                            final meeting = item.meeting;
+                            final room = meeting.room.trim().isEmpty
+                                ? 'TBA'
+                                : meeting.room.trim();
+                            final subject = record.subjectCode.trim().isEmpty
+                                ? record.className
+                                : '${record.subjectCode} · ${record.className}';
+
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 4,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          subject,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Section ${record.section.trim().isEmpty ? '—' : record.section.trim()}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 14,
+                                          runSpacing: 6,
+                                          children: [
+                                            _ScheduleDetail(
+                                              icon: LucideIcons.clock3,
+                                              label:
+                                                  '${meeting.formattedStartTime} – ${meeting.formattedEndTime}',
+                                            ),
+                                            _ScheduleDetail(
+                                              icon: LucideIcons.mapPin,
+                                              label: room,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<Map<String, String>> get assignedClasses =>
+      _classes.where((c) => !c.isArchived).map(_classToMap).toList();
 
   Map<String, String> _classToMap(OfficialClassRecord c) {
     return {
@@ -173,49 +545,30 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
     };
   }
 
-  bool _isClassScheduledToday(OfficialClassRecord c) {
-    return c.isScheduledOnWeekday(DateTime.now().weekday);
-  }
-
   void showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
-  String _formattedToday() {
-    final now = DateTime.now();
-
+  String _formattedHeaderDate() {
+    final now = AcademicService.manilaToday;
     const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
     ];
-
-    const weekdays = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-
-    return '${weekdays[now.weekday - 1]}, '
-        '${months[now.month - 1]} ${now.day}, ${now.year}';
+    final weekday = ClassMeetingSchedule.daysOfWeek[now.weekday - 1];
+    return '${weekday.toUpperCase()}, ${months[now.month - 1]} ${now.day}';
   }
 
   // ============================================================
@@ -223,12 +576,27 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
   // ============================================================
 
   Widget buildHomeScreen() {
-    final name = _profile?.fullName.trim() ?? '';
-    final greeting = name.isNotEmpty ? 'Welcome back, $name' : 'Welcome back';
+    final fullName = _profile?.fullName.trim() ?? '';
+    final firstName = fullName.isEmpty
+        ? 'Instructor'
+        : fullName.split(RegExp(r'\s+')).first;
     return _buildLayeredPage(
-      eyebrow: 'INSTRUCTOR WORKSPACE',
-      title: greeting,
-      subtitle: 'Your classes and teaching activities',
+      eyebrow: _formattedHeaderDate(),
+      title: 'Ready for today, $firstName?',
+      subtitle: 'Teach with purpose.',
+      highlightEyebrow: true,
+      headerAction: Tooltip(
+        message: 'Open notifications',
+        child: DashboardNotificationButton(
+          onPressed: _openInstructorNotifications,
+          unreadCount: _instructorNotifications
+              .where(
+                (item) => !_readInstructorNotificationIds.contains(item.id),
+              )
+              .length,
+          isDarkHeader: true,
+        ),
+      ),
       child: _buildHomeContent(),
     );
   }
@@ -247,9 +615,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
       eyebrow: 'CLASS COMMUNICATION',
       title: 'Announcements',
       subtitle: 'Share updates with a specific class or section',
-      child: InstructorAnnouncementsPage(
-        assignedClasses: assignedClasses,
-      ),
+      child: InstructorAnnouncementsPage(assignedClasses: assignedClasses),
     );
   }
 
@@ -257,6 +623,8 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
     required String eyebrow,
     required String title,
     required String subtitle,
+    bool highlightEyebrow = false,
+    Widget? headerAction,
     required Widget child,
   }) {
     return Container(
@@ -290,40 +658,144 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                         bottomRight: Radius.circular(32),
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          eyebrow,
-                          style: const TextStyle(
-                            color: AppColors.primaryLight,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 2,
+                    child: headerAction == null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (eyebrow.isNotEmpty) ...[
+                                if (highlightEyebrow)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.14,
+                                      ),
+                                      borderRadius: BorderRadius.circular(9),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      eyebrow,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.7,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    eyebrow,
+                                    style: const TextStyle(
+                                      color: AppColors.primaryLight,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 2,
+                                    ),
+                                  ),
+                                const SizedBox(height: 14),
+                              ],
+                              Text(
+                                title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.7,
+                                ),
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                subtitle,
+                                style: const TextStyle(
+                                  color: AppColors.primaryLight,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (eyebrow.isNotEmpty) ...[
+                                      if (highlightEyebrow)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 9,
+                                            vertical: 5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primaryLight
+                                                .withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(
+                                              9,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.primaryLight
+                                                  .withValues(alpha: 0.3),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            eyebrow,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.7,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Text(
+                                          eyebrow,
+                                          style: const TextStyle(
+                                            color: AppColors.primaryLight,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 2,
+                                          ),
+                                        ),
+                                      const SizedBox(height: 14),
+                                    ],
+                                    Text(
+                                      title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: -0.7,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 7),
+                                    Text(
+                                      subtitle,
+                                      style: const TextStyle(
+                                        color: AppColors.primaryLight,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              headerAction,
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.7,
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(
-                            color: AppColors.primaryLight,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
 
@@ -337,9 +809,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(26),
-                      border: Border.all(
-                        color: AppColors.border,
-                      ),
+                      border: Border.all(color: AppColors.border),
                       boxShadow: [
                         BoxShadow(
                           color: AppColors.navy.withValues(alpha: 0.07),
@@ -389,15 +859,9 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
     }
 
     final activeClasses = _classes.where((c) => !c.isArchived).toList();
-    final totalStudents = activeClasses.fold<int>(
-      0,
-      (sum, c) => sum + c.approvedStudentCount,
-    );
-    final totalPending = activeClasses.fold<int>(
-      0,
-      (sum, c) => sum + c.pendingRequestCount,
-    );
-    final todayCount = activeClasses.where(_isClassScheduledToday).length;
+    final todayMeetings = _todayMeetings;
+    final weekDates = _currentWeekDates;
+    final selectedDate = _selectedScheduleDate ?? AcademicService.manilaToday;
 
     return RefreshIndicator(
       color: _blue,
@@ -406,314 +870,215 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
         maxWidth: 1024,
         padding: EdgeInsets.zero,
         child: ListView(
-        padding: const EdgeInsets.fromLTRB(17, 22, 17, 30),
-        children: [
-          Text(
-            _formattedToday(),
-            style: const TextStyle(
-              color: _muted,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 22),
-
-          // SUMMARY CARDS
-          Row(
-            children: [
-              Expanded(
-                child: buildSummaryCard(
-                  '${activeClasses.length}',
-                  'Active classes',
-                  LucideIcons.bookOpen,
-                  accentColor: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: buildSummaryCard(
-                  '$totalStudents',
-                  totalPending > 0
-                      ? 'Students ($totalPending pending)'
-                      : 'Enrolled students',
-                  LucideIcons.users,
-                  accentColor: AppColors.info,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildSummaryCard(
-                  '$todayCount',
-                  'Classes today',
-                  LucideIcons.calendarDays,
-                  accentColor: AppColors.success,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: buildSummaryCard(
-                  '$totalPending',
-                  'Pending requests',
-                  LucideIcons.userCheck,
-                  accentColor: AppColors.warning,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 28),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Today's Classes",
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: _navy,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${ClassMeetingSchedule.daysOfWeek[DateTime.now().weekday - 1]} · ${_todayMeetings.length} scheduled meeting${_todayMeetings.length == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: _muted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() => selectedIndex = 1);
-                },
-                child: const Text(
-                  'See all',
-                  style: TextStyle(
-                    color: _blue,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          if (_classes.where((c) => !c.isArchived).isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceSoft,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _border),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'No classes created yet.',
-                    style: TextStyle(
-                      color: _navy,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  FilledButton.icon(
-                    onPressed: _openCreateClassDialog,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Create your first class'),
-                  ),
-                ],
-              ),
-            )
-          else if (_todayMeetings.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _border),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceSoft,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _border),
-                    ),
-                    child: const Icon(
-                      LucideIcons.calendarOff,
-                      color: _muted,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'No classes scheduled for today.',
-                    style: TextStyle(
-                      color: _navy,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'View all assigned classes in the Classes tab.',
-                    style: TextStyle(
-                      color: _muted,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            ..._todayMeetings.map(_buildTodayMeetingCard),
-
-          const SizedBox(height: 14),
-
-          // VIEW CLASSES BUTTON
-          SizedBox(
-            height: 52,
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                setState(() => selectedIndex = 1);
-              },
-              icon: const Icon(
-                LucideIcons.bookOpen,
-                size: 19,
-              ),
-              label: const Text(
-                'Manage classes & enrollments',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _blue,
-                side: const BorderSide(
-                  color: _blue,
-                  width: 1.3,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // INFORMATION NOTE
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceSoft,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _border),
-            ),
-            child: const Row(
+          padding: const EdgeInsets.fromLTRB(17, 22, 17, 30),
+          children: [
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  LucideIcons.info,
-                  color: _blue,
-                  size: 20,
+                const Text(
+                  "Today's Classes",
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    color: _navy,
+                  ),
                 ),
-                SizedBox(width: 11),
-                Expanded(
-                  child: Text(
-                    'Your workspace shows only your assigned sections. '
-                    'Select a class to manage enrollments, attendance, and scores.',
-                    style: TextStyle(
-                      color: _navy,
-                      fontSize: 13,
-                      height: 1.5,
-                    ),
+                const SizedBox(height: 2),
+                Text(
+                  '${todayMeetings.length} scheduled meeting${todayMeetings.length == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: _muted,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-      ),
-    );
-  }
 
-  // ============================================================
-  // SUMMARY CARD
-  // ============================================================
+            const SizedBox(height: 12),
 
-  Widget buildSummaryCard(
-    String value,
-    String label,
-    IconData icon, {
-    Color accentColor = AppColors.primary,
-  }) {
-    return Container(
-      height: 112,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
-        boxShadow: [
-          BoxShadow(
-            color: accentColor.withValues(alpha: 0.07),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 21,
-            color: accentColor,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: _navy,
-              fontSize: 25,
-              fontWeight: FontWeight.w800,
+            if (activeClasses.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _border),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      'No classes created yet.',
+                      style: TextStyle(
+                        color: _navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: _openCreateClassDialog,
+                      icon: const Icon(LucideIcons.plus, size: 18),
+                      label: const Text('Create your first class'),
+                    ),
+                  ],
+                ),
+              )
+            else if (todayMeetings.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _border),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceSoft,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _border),
+                      ),
+                      child: const Icon(
+                        LucideIcons.calendarOff,
+                        color: _muted,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'No classes scheduled for today.',
+                      style: TextStyle(
+                        color: _navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'View all assigned classes in the Classes tab.',
+                      style: TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...todayMeetings.map(_buildTodayMeetingCard),
+
+            const SizedBox(height: 28),
+
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Weekly Schedule',
+                    style: TextStyle(
+                      color: _navy,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  'Tap a day to preview',
+                  style: TextStyle(
+                    color: _muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(
-              color: _muted,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: weekDates.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final date = weekDates[index];
+                  final isSelected =
+                      date.year == selectedDate.year &&
+                      date.month == selectedDate.month &&
+                      date.day == selectedDate.day;
+                  final hasClasses = _meetingsForWeekday(date.weekday)
+                      .isNotEmpty;
+                  final dayName =
+                      ClassMeetingSchedule.daysOfWeek[date.weekday - 1];
+
+                  return Tooltip(
+                    message: MaterialLocalizations.of(context)
+                        .formatFullDate(date),
+                    child: Material(
+                      color: isSelected ? AppColors.primary : AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        onTap: () => _showSchedulePreview(date),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          width: 54,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                dayName.substring(0, 3),
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${date.day}',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Container(
+                                width: 4,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: !hasClasses
+                                      ? Colors.transparent
+                                      : isSelected
+                                      ? Colors.white
+                                      : AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -752,11 +1117,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                   color: _ice,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
-                  LucideIcons.bookOpen,
-                  color: _blue,
-                  size: 19,
-                ),
+                child: const Icon(LucideIcons.bookOpen, color: _blue, size: 19),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -812,10 +1173,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: hasAttendance ? _ice : AppColors.surfaceSoft,
                   borderRadius: BorderRadius.circular(8),
@@ -856,20 +1214,16 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                   child: hasAttendance
                       ? OutlinedButton.icon(
                           onPressed: () async {
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => InstructorAttendanceScreen(
-                                  classItem: classMap,
-                                  scheduleId: meeting.id,
-                                  meetingKey: item.meetingKey,
-                                  meetingLabel: meeting.formattedSummary,
-                                ),
-                              ),
+                            await _openAttendanceHistoryForMeeting(
+                              item,
+                              classMap,
                             );
                             if (mounted) _loadDashboardData();
                           },
-                          icon: const Icon(LucideIcons.clipboardCheck, size: 15),
+                          icon: const Icon(
+                            LucideIcons.clipboardCheck,
+                            size: 15,
+                          ),
                           label: const Text(
                             'Edit Attendance',
                             style: TextStyle(
@@ -900,7 +1254,10 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                             );
                             if (mounted) _loadDashboardData();
                           },
-                          icon: const Icon(LucideIcons.clipboardCheck, size: 15),
+                          icon: const Icon(
+                            LucideIcons.clipboardCheck,
+                            size: 15,
+                          ),
                           label: const Text(
                             'Take Attendance',
                             style: TextStyle(
@@ -927,9 +1284,8 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => InstructorEnterScoresScreen(
-                            classItem: classMap,
-                          ),
+                          builder: (context) =>
+                              InstructorEnterScoresScreen(classItem: classMap),
                         ),
                       );
                     },
@@ -989,11 +1345,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                   color: _ice,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  LucideIcons.bookOpen,
-                  color: _blue,
-                  size: 21,
-                ),
+                child: const Icon(LucideIcons.bookOpen, color: _blue, size: 21),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1011,42 +1363,26 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                     const SizedBox(height: 3),
                     Text(
                       '${classItem['code']} · ${classItem['section']}',
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 12,
-                      ),
+                      style: const TextStyle(color: _muted, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              const Icon(
-                LucideIcons.chevronRight,
-                color: _blue,
-                size: 21,
-              ),
+              const Icon(LucideIcons.chevronRight, color: _blue, size: 21),
             ],
           ),
 
           const SizedBox(height: 15),
 
-          _classInfoRow(
-            LucideIcons.clock,
-            classItem['schedule']!,
-          ),
+          _classInfoRow(LucideIcons.clock, classItem['schedule']!),
 
           const SizedBox(height: 8),
 
-          _classInfoRow(
-            LucideIcons.mapPin,
-            classItem['room']!,
-          ),
+          _classInfoRow(LucideIcons.mapPin, classItem['room']!),
 
           const SizedBox(height: 8),
 
-          _classInfoRow(
-            LucideIcons.users,
-            classItem['students']!,
-          ),
+          _classInfoRow(LucideIcons.users, classItem['students']!),
 
           const SizedBox(height: 16),
 
@@ -1061,9 +1397,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                         context,
                         MaterialPageRoute(
                           builder: (context) =>
-                              InstructorAttendanceScreen(
-                            classItem: classItem,
-                          ),
+                              InstructorAttendanceScreen(classItem: classItem),
                         ),
                       );
                     },
@@ -1129,19 +1463,12 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
   Widget _classInfoRow(IconData icon, String value) {
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: _muted,
-        ),
+        Icon(icon, size: 16, color: _muted),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
-              color: _muted,
-              fontSize: 12,
-            ),
+            style: const TextStyle(color: _muted, fontSize: 12),
           ),
         ),
       ],
@@ -1163,8 +1490,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
           record.className.toLowerCase().contains(searchText) ||
           record.subjectCode.toLowerCase().contains(searchText) ||
           record.section.toLowerCase().contains(searchText);
-      final matchesToday = !showTodayOnly || _isClassScheduledToday(record);
-      return matchesSearch && matchesToday;
+      return matchesSearch;
     }).toList();
 
     return RefreshIndicator(
@@ -1174,386 +1500,438 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
         maxWidth: 1024,
         padding: EdgeInsets.zero,
         child: ListView(
-        padding: const EdgeInsets.fromLTRB(17, 22, 17, 30),
-        children: [
-          const SizedBox(height: 5),
+          padding: const EdgeInsets.fromLTRB(17, 22, 17, 30),
+          children: [
+            const SizedBox(height: 5),
 
-          // SEARCH FIELD
-          TextField(
-            onChanged: (value) {
-              setState(() => searchQuery = value);
-            },
-            decoration: InputDecoration(
-              hintText: 'Search name, code or section',
-              hintStyle: const TextStyle(color: _muted, fontSize: 13),
-              prefixIcon: const Icon(
-                LucideIcons.search,
-                color: _muted,
-                size: 20,
-              ),
-              filled: true,
-              fillColor: AppColors.surface,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 16,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(15),
-                borderSide: const BorderSide(color: _border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(15),
-                borderSide: const BorderSide(color: _blue, width: 1.5),
+            // SEARCH FIELD
+            TextField(
+              onChanged: (value) {
+                setState(() => searchQuery = value);
+              },
+              decoration: InputDecoration(
+                hintText: 'Search name, code or section',
+                hintStyle: const TextStyle(color: _muted, fontSize: 13),
+                prefixIcon: const Icon(
+                  LucideIcons.search,
+                  color: _muted,
+                  size: 20,
+                ),
+                filled: true,
+                fillColor: AppColors.surface,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 16,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: const BorderSide(color: _border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: const BorderSide(color: _blue, width: 1.5),
+                ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: ElevatedButton.icon(
-                    onPressed: _openCreateClassDialog,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text(
-                      'Create Class',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _blue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: ElevatedButton.icon(
+                      onPressed: _openCreateClassDialog,
+                      icon: const Icon(LucideIcons.plus, size: 18),
+                      label: const Text(
+                        'Create Class',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _blue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              FilterChip(
-                label: const Text('Show Archived'),
-                selected: showArchived,
-                onSelected: (v) {
-                  setState(() => showArchived = v);
-                  _loadDashboardData();
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // FILTER
-          Container(
-            height: 48,
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: _ice,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: buildClassFilterButton(
-                    label: 'All classes',
-                    isSelected: !showTodayOnly,
-                    onTap: () => setState(() => showTodayOnly = false),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: buildClassFilterButton(
-                    label: 'Today',
-                    isSelected: showTodayOnly,
-                    onTap: () => setState(() => showTodayOnly = true),
-                  ),
+                const SizedBox(width: 10),
+                PopupMenuButton<String>(
+                  tooltip: 'Class filters',
+                  onSelected: (value) {
+                    if (value == 'archived') {
+                      setState(() => showArchived = !showArchived);
+                      _loadDashboardData();
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    CheckedPopupMenuItem<String>(
+                      value: 'archived',
+                      checked: showArchived,
+                      child: const Text('Show Archived'),
+                    ),
+                  ],
+                  icon: const Icon(LucideIcons.ellipsis, color: _blue),
                 ),
               ],
             ),
-          ),
 
-          const SizedBox(height: 18),
+            const SizedBox(height: 14),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Your classes',
-                style: TextStyle(
-                  color: _navy,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                '${filteredRecords.length} sections',
-                style: const TextStyle(color: _muted, fontSize: 12),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          if (filteredRecords.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(25),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _border),
-              ),
-              child: const Column(
-                children: [
-                  Icon(LucideIcons.searchX, color: _muted, size: 32),
-                  SizedBox(height: 10),
-                  Text(
-                    'No assigned classes found.',
-                    style: TextStyle(color: _muted, fontSize: 13),
-                  ),
-                ],
-              ),
-            )
-          else
-            ...filteredRecords.map(_buildManagedClassCard),
-
-          const SizedBox(height: 15),
-
-          Container(
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceSoft,
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: _border),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(LucideIcons.shieldCheck, color: _blue, size: 19),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    "Assigned-class access only. Other instructors' "
-                    "classes are not available in this account.",
-                    style: TextStyle(color: _navy, fontSize: 12, height: 1.5),
+                const Text(
+                  'All Classes',
+                  style: TextStyle(
+                    color: _navy,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
                   ),
+                ),
+                Text(
+                  '${_classes.length} assigned',
+                  style: const TextStyle(color: _muted, fontSize: 12),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
+
+            const SizedBox(height: 14),
+
+            if (filteredRecords.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(25),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _border),
+                ),
+                child: const Column(
+                  children: [
+                    Icon(LucideIcons.searchX, color: _muted, size: 32),
+                    SizedBox(height: 10),
+                    Text(
+                      'No assigned classes found.',
+                      style: TextStyle(color: _muted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...filteredRecords.map(_buildManagedClassCard),
+
+            const SizedBox(height: 15),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildManagedClassCard(OfficialClassRecord record) {
-    final classMap = _classToMap(record);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Material(
         color: AppColors.surface,
-        border: Border.all(color: _border),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: _blue.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: _ice,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(LucideIcons.bookOpen, color: _blue, size: 21),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: _border),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openClassDetails(record),
+          borderRadius: BorderRadius.circular(18),
+          splashColor: _blue.withValues(alpha: 0.08),
+          highlightColor: _blue.withValues(alpha: 0.04),
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      record.className,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: _navy,
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: _ice,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        LucideIcons.bookOpen,
+                        color: _blue,
+                        size: 21,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      [
-                        record.subjectCode,
-                        record.section,
-                        if (record.program.isNotEmpty) record.program,
-                        if (record.academicYear.isNotEmpty) record.academicYear,
-                      ].join(' · ') +
-                          (record.isArchived ? ' (Archived)' : ''),
-                      style: const TextStyle(color: _muted, fontSize: 12),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record.className,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: _navy,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${record.subjectCode} · ${record.section}'
+                            '${record.isArchived ? ' · Archived' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: _muted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Class actions',
+                      onSelected: (action) async {
+                        if (action == 'edit') {
+                          await _openCreateClassDialog(existing: record);
+                        } else if (action == 'archive') {
+                          try {
+                            await ClassService.setClassArchived(
+                              record.id,
+                              !record.isArchived,
+                            );
+                            await _loadDashboardData();
+                            if (mounted) {
+                              showMessage(
+                                record.isArchived
+                                    ? 'Class restored.'
+                                    : 'Class archived.',
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) showMessage(formatSupabaseError(e));
+                          }
+                        } else if (action == 'regen') {
+                          try {
+                            final newCode = ClassService.generateCode();
+                            await ClassService.updateOfficialClass(
+                              classId: record.id,
+                              className: record.className,
+                              subjectCode: record.subjectCode,
+                              section: record.section,
+                              academicYear: record.academicYear,
+                              program: record.program,
+                              room: record.room,
+                              scheduleDay: record.scheduleDay,
+                              scheduleTime: record.scheduleTime,
+                              description: record.description,
+                              enrollmentCode: newCode,
+                            );
+                            await _loadDashboardData();
+                            if (mounted) {
+                              showMessage('New join code generated: $newCode');
+                            }
+                          } catch (e) {
+                            if (mounted) showMessage(formatSupabaseError(e));
+                          }
+                        } else if (action == 'delete') {
+                          await _deleteOfficialClass(record);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Edit class'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'regen',
+                          child: Text('Regenerate join code'),
+                        ),
+                        PopupMenuItem(
+                          value: 'archive',
+                          child: Text(
+                            record.isArchived
+                                ? 'Restore class'
+                                : 'Archive class',
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            'Delete class',
+                            style: TextStyle(color: AppColors.danger),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (action) async {
-                  if (action == 'edit') {
-                    await _openCreateClassDialog(existing: record);
-                  } else if (action == 'archive') {
-                    await ClassService.setClassArchived(
-                      record.id,
-                      !record.isArchived,
-                    );
-                    await _loadDashboardData();
-                    showMessage(
-                      record.isArchived
-                          ? 'Class restored.'
-                          : 'Class archived.',
-                    );
-                  } else if (action == 'regen') {
-                    final newCode = ClassService.generateCode();
-                    await ClassService.updateOfficialClass(
-                      classId: record.id,
-                      className: record.className,
-                      subjectCode: record.subjectCode,
-                      section: record.section,
-                      academicYear: record.academicYear,
-                      program: record.program,
-                      room: record.room,
-                      scheduleDay: record.scheduleDay,
-                      scheduleTime: record.scheduleTime,
-                      description: record.description,
-                      enrollmentCode: newCode,
-                    );
-                    await _loadDashboardData();
-                    showMessage('New join code generated: $newCode');
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'edit', child: Text('Edit class')),
-                  const PopupMenuItem(
-                    value: 'regen',
-                    child: Text('Regenerate join code'),
-                  ),
-                  PopupMenuItem(
-                    value: 'archive',
-                    child: Text(
-                      record.isArchived ? 'Restore class' : 'Archive class',
-                    ),
-                  ),
+                const SizedBox(height: 12),
+                if (record.program.isNotEmpty) ...[
+                  _classInfoRow(LucideIcons.graduationCap, record.program),
+                  const SizedBox(height: 6),
                 ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _classInfoRow(LucideIcons.clock, record.scheduleMultiline),
-          const SizedBox(height: 6),
-          _classInfoRow(
-            LucideIcons.mapPin,
-            record.roomSummary,
-          ),
-          const SizedBox(height: 6),
-          _classInfoRow(
-            LucideIcons.users,
-            '${record.approvedStudentCount} enrolled · ${record.pendingRequestCount} pending',
-          ),
-          const SizedBox(height: 8),
-          InkWell(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: record.enrollmentCode));
-              showMessage('Join code ${record.enrollmentCode} copied.');
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _ice,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.key_rounded, size: 15, color: _blue),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Join Code: ${record.enrollmentCode}',
-                    style: const TextStyle(
-                      color: _blue,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.copy_rounded, size: 13, color: _blue),
-                ],
-              ),
+                _classInfoRow(LucideIcons.clock, record.scheduleMultiline),
+                const SizedBox(height: 6),
+                _classInfoRow(LucideIcons.mapPin, record.roomSummary),
+                const SizedBox(height: 6),
+                _classInfoRow(
+                  LucideIcons.users,
+                  '${record.approvedStudentCount} enrolled',
+                ),
+                const SizedBox(height: 6),
+                _classInfoRow(
+                  LucideIcons.clipboardList,
+                  '${_classAssessmentCounts[record.id] ?? 0} activities',
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          const Divider(color: _border, height: 1),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _openManageEnrollmentsSheet(record),
-                icon: const Icon(LucideIcons.userPlus, size: 15),
-                label: Text(
-                  record.pendingRequestCount > 0
-                      ? 'Students (${record.pendingRequestCount} pending)'
-                      : 'Students',
-                ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openClassDetails(OfficialClassRecord record) async {
+    final classMap = _classToMap(record);
+    final item = ClassItem(
+      id: record.id,
+      code: record.subjectCode,
+      name: record.className,
+      instructor: classMap['instructor']!,
+      location: record.roomSummary,
+      day: record.scheduleDay,
+      time: record.scheduleTime,
+      schedules: record.effectiveSchedules,
+      progress: 0,
+      section: record.section,
+      isOfficial: true,
+      enrollmentCode: record.enrollmentCode,
+      description: record.description,
+    );
+
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ClassDetailScreen(
+          classItem: item,
+          instructorClassRecord: record,
+          activityCount: _classAssessmentCounts[record.id] ?? 0,
+          attendanceCount: _todayAttendanceCounts[record.id] ?? 0,
+          onManageStudents: () => _openManageEnrollmentsSheet(record),
+          onManageAttendance: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => InstructorAttendanceScreen(classItem: classMap),
               ),
-              OutlinedButton.icon(
-                onPressed: () {
+            );
+          },
+          onOpenAttendanceHistory: () => _openAttendanceHistory(classMap),
+          onOpenAttendanceSession: (session) =>
+              _openAttendanceHistory(classMap, sessionId: session.id),
+          onManageActivities: () => _openClassAssignmentsSheet(record),
+          onEnterScores: (_classAssessmentCounts[record.id] ?? 0) > 0
+              ? () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) =>
-                          InstructorAttendanceScreen(classItem: classMap),
+                          InstructorEnterScoresScreen(classItem: classMap),
                     ),
                   );
-                },
-                icon: const Icon(LucideIcons.clipboardCheck, size: 15),
-                label: const Text('Attendance'),
-              ),
-              if ((_classAssessmentCounts[record.id] ?? 0) > 0)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            InstructorEnterScoresScreen(classItem: classMap),
-                      ),
-                    );
-                  },
-                  icon: const Icon(LucideIcons.award, size: 15),
-                  label: const Text('Scores'),
-                ),
-              OutlinedButton.icon(
-                onPressed: () => _openClassAssignmentsSheet(record),
-                icon: const Icon(LucideIcons.fileText, size: 15),
-                label: const Text('Tasks & Quizzes'),
-              ),
-            ],
+                }
+              : null,
+          onCopyJoinCode: () {
+            Clipboard.setData(ClipboardData(text: record.enrollmentCode));
+            showMessage('Join code ${record.enrollmentCode} copied.');
+          },
+          onManageAnnouncements: () => setState(() => selectedIndex = 2),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAttendanceHistory(
+    Map<String, String> classMap, {
+    String? sessionId,
+  }) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InstructorAttendanceHistoryScreen(
+          classItem: classMap,
+          initialSessionId: sessionId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAttendanceHistoryForMeeting(
+    _InstructorTodayMeeting meeting,
+    Map<String, String> classMap,
+  ) async {
+    try {
+      final sessions = await AcademicService.getClassAttendanceSessionsOn(
+        meeting.record.id,
+        AcademicService.manilaToday,
+      );
+      final schedulesForToday = meeting.record.effectiveSchedules
+          .where(
+            (schedule) =>
+                schedule.weekday == AcademicService.manilaToday.weekday,
+          )
+          .length;
+      final target = AcademicService.findAttendanceSessionForMeeting(
+        sessions: sessions,
+        meetingKey: meeting.meetingKey,
+        scheduleId: meeting.meeting.id,
+        hasSingleScheduledMeeting: schedulesForToday == 1,
+      );
+      if (target == null) {
+        showMessage('No saved attendance was found for this meeting.');
+        return;
+      }
+      await _openAttendanceHistory(classMap, sessionId: target.id);
+    } catch (error) {
+      if (mounted) showMessage(formatAttendanceSessionsError(error));
+    }
+  }
+
+  Future<void> _deleteOfficialClass(OfficialClassRecord record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete class?'),
+        content: const Text(
+          'This permanently deletes the class and its related records. '
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await ClassService.deleteOfficialClass(record.id);
+      await _loadDashboardData();
+      if (mounted) showMessage('Class deleted.');
+    } catch (e) {
+      if (mounted) showMessage(formatSupabaseError(e));
+    }
   }
 
   Future<void> _openCreateClassDialog({OfficialClassRecord? existing}) async {
@@ -1598,7 +1976,9 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
           builder: (context, setSheetState) {
             Future<void> load() async {
               try {
-                final list = await AcademicService.getClassAssignments(record.id);
+                final list = await AcademicService.getClassAssignments(
+                  record.id,
+                );
                 if (!sheetContext.mounted) return;
                 setSheetState(() {
                   assignments = list;
@@ -1627,8 +2007,12 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                 maxScoreCtrl.text = a.maxScore == null
                     ? ''
                     : a.maxScore!.toStringAsFixed(0);
-                category = const ['Assignment', 'Activity', 'Project']
-                        .contains(a.category)
+                category =
+                    const [
+                      'Assignment',
+                      'Activity',
+                      'Project',
+                    ].contains(a.category)
                     ? a.category
                     : 'Assignment';
                 dueDate = a.dueAt;
@@ -1789,7 +2173,8 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                                       firstDate: DateTime(2024),
                                       lastDate: DateTime(2035),
                                     );
-                                    if (picked != null && sheetContext.mounted) {
+                                    if (picked != null &&
+                                        sheetContext.mounted) {
                                       setSheetState(() => dueDate = picked);
                                     }
                                   },
@@ -1838,8 +2223,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                                   try {
                                     final isEditing = editingAssignment != null;
                                     if (isEditing) {
-                                      await AcademicService
-                                          .updateClassAssignment(
+                                      await AcademicService.updateClassAssignment(
                                         id: editingAssignment!.id,
                                         title: title,
                                         description: descCtrl.text,
@@ -1848,8 +2232,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                                         maxScore: parsedMaxScore,
                                       );
                                     } else {
-                                      await AcademicService
-                                          .createClassAssignment(
+                                      await AcademicService.createClassAssignment(
                                         classId: record.id,
                                         title: title,
                                         description: descCtrl.text,
@@ -1865,8 +2248,9 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                                     descCtrl.clear();
                                     maxScoreCtrl.clear();
                                     category = 'Assignment';
-                                    dueDate = DateTime.now()
-                                        .add(const Duration(days: 3));
+                                    dueDate = DateTime.now().add(
+                                      const Duration(days: 3),
+                                    );
                                     await load();
                                     if (!sheetContext.mounted) return;
                                     setSheetState(() {
@@ -1906,7 +2290,10 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                     if (loading)
                       const Center(child: CircularProgressIndicator())
                     else if (error != null)
-                      Text(error!, style: const TextStyle(color: Colors.red))
+                      Text(
+                        error!,
+                        style: const TextStyle(color: AppColors.danger),
+                      )
                     else if (assignments.isEmpty)
                       const Text(
                         'No assignments published for this class yet.',
@@ -1946,14 +2333,15 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                                 icon: const Icon(
                                   LucideIcons.trash2,
                                   size: 18,
-                                  color: Colors.red,
+                                  color: AppColors.danger,
                                 ),
                                 onPressed: isSubmitting
                                     ? null
                                     : () async {
                                         try {
-                                          await AcademicService
-                                              .deleteClassAssignment(a.id);
+                                          await AcademicService.deleteClassAssignment(
+                                            a.id,
+                                          );
                                           if (editingAssignment?.id == a.id) {
                                             cancelEditing();
                                           }
@@ -2023,10 +2411,12 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
             if (loading && enrollments.isEmpty && error == null) {
               Future.microtask(() => load(setSheetState));
             }
-            final pending =
-                enrollments.where((e) => e.status == 'pending').toList();
-            final approved =
-                enrollments.where((e) => e.status == 'approved').toList();
+            final pending = enrollments
+                .where((e) => e.status == 'pending')
+                .toList();
+            final approved = enrollments
+                .where((e) => e.status == 'approved')
+                .toList();
 
             return Padding(
               padding: EdgeInsets.fromLTRB(
@@ -2087,93 +2477,89 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                       child: loading
                           ? const Center(child: CircularProgressIndicator())
                           : error != null
-                              ? Center(child: Text(error!))
-                              : ListView(
-                                  children: [
-                                    if (pending.isNotEmpty) ...[
-                                      const Text(
-                                        'Pending Requests',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          color: _navy,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      ...pending.map(
-                                        (e) => ListTile(
-                                          dense: true,
-                                          title: Text(e.studentName),
-                                          subtitle: Text(e.studentEmail),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(
-                                                  Icons.check_circle,
-                                                  color: AppColors.success,
-                                                ),
-                                                onPressed: () async {
-                                                  await ClassService
-                                                      .updateEnrollmentStatus(
-                                                    enrollmentId: e.id,
-                                                    status: 'approved',
-                                                  );
-                                                  await load(setSheetState);
-                                                  await _loadDashboardData();
-                                                },
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(
-                                                  Icons.cancel,
-                                                  color: AppColors.danger,
-                                                ),
-                                                onPressed: () async {
-                                                  await ClassService
-                                                      .updateEnrollmentStatus(
-                                                    enrollmentId: e.id,
-                                                    status: 'rejected',
-                                                  );
-                                                  await load(setSheetState);
-                                                  await _loadDashboardData();
-                                                },
-                                              ),
-                                            ],
+                          ? Center(child: Text(error!))
+                          : ListView(
+                              children: [
+                                if (pending.isNotEmpty) ...[
+                                  const Text(
+                                    'Pending Requests',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: _navy,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ...pending.map(
+                                    (e) => ListTile(
+                                      dense: true,
+                                      title: Text(e.studentName),
+                                      subtitle: Text(e.studentEmail),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                              LucideIcons.circleCheck,
+                                              color: AppColors.success,
+                                            ),
+                                            onPressed: () async {
+                                              await ClassService.updateEnrollmentStatus(
+                                                enrollmentId: e.id,
+                                                status: 'approved',
+                                              );
+                                              await load(setSheetState);
+                                              await _loadDashboardData();
+                                            },
                                           ),
-                                        ),
-                                      ),
-                                      const Divider(),
-                                    ],
-                                    Text(
-                                      'Enrolled Students (${approved.length})',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: _navy,
+                                          IconButton(
+                                            icon: const Icon(
+                                              LucideIcons.circleX,
+                                              color: AppColors.danger,
+                                            ),
+                                            onPressed: () async {
+                                              await ClassService.updateEnrollmentStatus(
+                                                enrollmentId: e.id,
+                                                status: 'rejected',
+                                              );
+                                              await load(setSheetState);
+                                              await _loadDashboardData();
+                                            },
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    if (approved.isEmpty)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          vertical: 12,
-                                        ),
-                                        child: Text(
-                                          'No enrolled students yet.',
-                                          style: TextStyle(color: _muted),
-                                        ),
-                                      )
-                                    else
-                                      ...approved.map(
-                                        (e) => ListTile(
-                                          dense: true,
-                                          leading: const Icon(
-                                            Icons.person_outline,
-                                            size: 20,
-                                          ),
-                                          title: Text(e.studentName),
-                                          subtitle: Text(e.studentEmail),
-                                        ),
-                                      ),
-                                  ],
+                                  ),
+                                  const Divider(),
+                                ],
+                                Text(
+                                  'Enrolled Students (${approved.length})',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: _navy,
+                                  ),
                                 ),
+                                if (approved.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                    child: Text(
+                                      'No enrolled students yet.',
+                                      style: TextStyle(color: _muted),
+                                    ),
+                                  )
+                                else
+                                  ...approved.map(
+                                    (e) => ListTile(
+                                      dense: true,
+                                      leading: const Icon(
+                                        LucideIcons.userRound,
+                                        size: 20,
+                                      ),
+                                      title: Text(e.studentName),
+                                      subtitle: Text(e.studentEmail),
+                                    ),
+                                  ),
+                              ],
+                            ),
                     ),
                   ],
                 ),
@@ -2185,37 +2571,6 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
     );
 
     emailCtrl.dispose();
-  }
-
-  // ============================================================
-  // CLASS FILTER BUTTON
-  // ============================================================
-
-  Widget buildClassFilterButton({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected ? _blue : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : _muted,
-            fontSize: 13,
-            fontWeight:
-                isSelected ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
   }
 
   // ============================================================
@@ -2243,9 +2598,8 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => InstructorAttendanceScreen(
-                classItem: classItem,
-              ),
+              builder: (context) =>
+                  InstructorAttendanceScreen(classItem: classItem),
             ),
           );
         },
@@ -2285,49 +2639,30 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
                         const SizedBox(height: 3),
                         Text(
                           '${classItem['code']} · ${classItem['section']}',
-                          style: const TextStyle(
-                            color: _muted,
-                            fontSize: 12,
-                          ),
+                          style: const TextStyle(color: _muted, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(
-                    LucideIcons.chevronRight,
-                    color: _blue,
-                    size: 21,
-                  ),
+                  const Icon(LucideIcons.chevronRight, color: _blue, size: 21),
                 ],
               ),
 
               const SizedBox(height: 15),
 
-              _classInfoRow(
-                LucideIcons.clock,
-                classItem['schedule']!,
-              ),
+              _classInfoRow(LucideIcons.clock, classItem['schedule']!),
 
               const SizedBox(height: 8),
 
-              _classInfoRow(
-                LucideIcons.mapPin,
-                classItem['room']!,
-              ),
+              _classInfoRow(LucideIcons.mapPin, classItem['room']!),
 
               const SizedBox(height: 8),
 
-              _classInfoRow(
-                LucideIcons.users,
-                classItem['students']!,
-              ),
+              _classInfoRow(LucideIcons.users, classItem['students']!),
 
               const SizedBox(height: 8),
 
-              _classInfoRow(
-                LucideIcons.userRound,
-                classItem['instructor']!,
-              ),
+              _classInfoRow(LucideIcons.userRound, classItem['instructor']!),
 
               const SizedBox(height: 13),
 
@@ -2337,11 +2672,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
 
               const Row(
                 children: [
-                  Icon(
-                    LucideIcons.arrowUpRight,
-                    size: 16,
-                    color: _blue,
-                  ),
+                  Icon(LucideIcons.arrowUpRight, size: 16, color: _blue),
                   SizedBox(width: 7),
                   Text(
                     'Open class workspace',
@@ -2378,18 +2709,12 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
         icon: LucideIcons.layoutDashboard,
         label: 'Overview',
       ),
-      AcademicNavDestination(
-        icon: LucideIcons.bookOpen,
-        label: 'Classes',
-      ),
+      AcademicNavDestination(icon: LucideIcons.bookOpen, label: 'Classes'),
       AcademicNavDestination(
         icon: LucideIcons.megaphone,
         label: 'Announcements',
       ),
-      AcademicNavDestination(
-        icon: LucideIcons.userRound,
-        label: 'Profile',
-      ),
+      AcademicNavDestination(icon: LucideIcons.userRound, label: 'Profile'),
     ];
 
     return AcademicNavigationShell(
@@ -2405,10 +2730,7 @@ class _InstructorDashboardState extends State<InstructorDashboard> {
           label: const Text('New Class'),
         ),
       ),
-      body: IndexedStack(
-        index: selectedIndex,
-        children: pages,
-      ),
+      body: IndexedStack(index: selectedIndex, children: pages),
     );
   }
 }
@@ -2431,22 +2753,10 @@ class InstructorGlassNavigationIsland extends StatelessWidget {
   static const Color _muted = AppColors.textSecondary;
 
   static const List<_InstructorNavItem> _items = [
-    _InstructorNavItem(
-      icon: LucideIcons.house,
-      label: 'Home',
-    ),
-    _InstructorNavItem(
-      icon: LucideIcons.bookOpen,
-      label: 'Classes',
-    ),
-    _InstructorNavItem(
-      icon: LucideIcons.megaphone,
-      label: 'Announcements',
-    ),
-    _InstructorNavItem(
-      icon: LucideIcons.userRound,
-      label: 'Profile',
-    ),
+    _InstructorNavItem(icon: LucideIcons.house, label: 'Home'),
+    _InstructorNavItem(icon: LucideIcons.bookOpen, label: 'Classes'),
+    _InstructorNavItem(icon: LucideIcons.megaphone, label: 'Announcements'),
+    _InstructorNavItem(icon: LucideIcons.userRound, label: 'Profile'),
   ];
 
   @override
@@ -2471,10 +2781,7 @@ class InstructorGlassNavigationIsland extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(26),
             child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: 18,
-                sigmaY: 18,
-              ),
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
               child: Container(
                 decoration: BoxDecoration(
                   color: AppColors.surface.withValues(alpha: 0.88),
@@ -2485,81 +2792,68 @@ class InstructorGlassNavigationIsland extends StatelessWidget {
                   ),
                 ),
                 child: Row(
-                  children: List.generate(
-                    _items.length,
-                    (index) {
-                      final item = _items[index];
-                      final isSelected = selectedIndex == index;
+                  children: List.generate(_items.length, (index) {
+                    final item = _items[index];
+                    final isSelected = selectedIndex == index;
 
-                      return Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 6,
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () => onItemSelected(index),
-                              child: AnimatedContainer(
-                                duration: const Duration(
-                                  milliseconds: 250,
-                                ),
-                                curve: Curves.easeInOut,
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? AppColors.primaryLight
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: isSelected
-                                      ? Border.all(
-                                          color: AppColors.border,
-                                          width: 0.8,
-                                        )
-                                      : null,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    AnimatedScale(
-                                      scale: isSelected ? 1.08 : 1.0,
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
-                                      child: Icon(
-                                        item.icon,
-                                        size: 22,
-                                        color: isSelected
-                                            ? _blue
-                                            : _muted,
-                                      ),
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 6,
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () => onItemSelected(index),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.primaryLight
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                                border: isSelected
+                                    ? Border.all(
+                                        color: AppColors.border,
+                                        width: 0.8,
+                                      )
+                                    : null,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  AnimatedScale(
+                                    scale: isSelected ? 1.08 : 1.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: Icon(
+                                      item.icon,
+                                      size: 22,
+                                      color: isSelected ? _blue : _muted,
                                     ),
-                                    const SizedBox(height: 4),
-                                    AnimatedDefaultTextStyle(
-                                      duration: const Duration(
-                                        milliseconds: 200,
-                                      ),
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? _blue
-                                            : _muted,
-                                        fontSize: 11,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w800
-                                            : FontWeight.w600,
-                                      ),
-                                      child: Text(item.label),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  AnimatedDefaultTextStyle(
+                                    duration: const Duration(milliseconds: 200),
+                                    style: TextStyle(
+                                      color: isSelected ? _blue : _muted,
+                                      fontSize: 11,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
                                     ),
-                                  ],
-                                ),
+                                    child: Text(item.label),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  }),
                 ),
               ),
             ),
@@ -2578,10 +2872,7 @@ class _InstructorNavItem {
   final IconData icon;
   final String label;
 
-  const _InstructorNavItem({
-    required this.icon,
-    required this.label,
-  });
+  const _InstructorNavItem({required this.icon, required this.label});
 }
 
 // ============================================================
@@ -2776,8 +3067,9 @@ class _OfficialClassFormDialogState extends State<_OfficialClassFormDialog> {
                   ),
                   IconButton(
                     tooltip: 'Close',
-                    onPressed:
-                        _isSaving ? null : () => Navigator.pop(context, false),
+                    onPressed: _isSaving
+                        ? null
+                        : () => Navigator.pop(context, false),
                     icon: const Icon(
                       LucideIcons.x,
                       size: 18,
@@ -2907,9 +3199,9 @@ class _OfficialClassFormDialogState extends State<_OfficialClassFormDialog> {
                             _schedules = updated;
                             _scheduleError =
                                 ClassMeetingSchedule.validateSchedules(
-                              updated,
-                              requireAtLeastOne: true,
-                            );
+                                  updated,
+                                  requireAtLeastOne: true,
+                                );
                           });
                         },
                       ),
@@ -2948,8 +3240,9 @@ class _OfficialClassFormDialogState extends State<_OfficialClassFormDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   OutlinedButton(
-                    onPressed:
-                        _isSaving ? null : () => Navigator.pop(context, false),
+                    onPressed: _isSaving
+                        ? null
+                        : () => Navigator.pop(context, false),
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 10),
@@ -3024,6 +3317,32 @@ class _OfficialClassFormDialogState extends State<_OfficialClassFormDialog> {
 // ============================================================
 // TODAY MEETING DATA CLASS
 // ============================================================
+
+class _ScheduleDetail extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _ScheduleDetail({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: AppColors.textSecondary),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _InstructorTodayMeeting {
   final OfficialClassRecord record;

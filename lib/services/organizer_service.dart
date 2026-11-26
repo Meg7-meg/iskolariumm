@@ -59,8 +59,8 @@ class StudentEventRecord {
       id: map['id'].toString(),
       title: (map['title'] ?? '').toString(),
       details: (map['details'] ?? '').toString(),
-      startsAt: DateTime.tryParse((map['starts_at'] ?? '').toString())
-              ?.toLocal() ??
+      startsAt:
+          DateTime.tryParse((map['starts_at'] ?? '').toString())?.toLocal() ??
           DateTime.now(),
       endsAt: map['ends_at'] != null
           ? DateTime.tryParse(map['ends_at'].toString())?.toLocal()
@@ -97,7 +97,8 @@ class StudySessionRecord {
       title: (map['title'] ?? '').toString(),
       subject: (map['subject'] ?? '').toString(),
       description: (map['description'] ?? '').toString(),
-      sessionDate: DateTime.tryParse((map['session_date'] ?? '').toString()) ??
+      sessionDate:
+          DateTime.tryParse((map['session_date'] ?? '').toString()) ??
           DateTime.now(),
       startTime: (map['start_time'] ?? '09:00').toString(),
       durationMinutes: (map['duration_minutes'] as num?)?.toInt() ?? 60,
@@ -140,7 +141,7 @@ class StudentNoteRecord {
           : null,
       updatedAt:
           DateTime.tryParse((map['updated_at'] ?? '').toString())?.toLocal() ??
-              DateTime.now(),
+          DateTime.now(),
     );
   }
 }
@@ -150,6 +151,8 @@ class StudentNotificationRecord {
   final String title;
   final String message;
   final String category;
+  final String classId;
+  final String announcementId;
   final DateTime createdAt;
   final DateTime? readAt;
 
@@ -158,6 +161,8 @@ class StudentNotificationRecord {
     required this.title,
     required this.message,
     required this.category,
+    this.classId = '',
+    this.announcementId = '',
     required this.createdAt,
     this.readAt,
   });
@@ -170,9 +175,11 @@ class StudentNotificationRecord {
       title: (map['title'] ?? '').toString(),
       message: (map['message'] ?? '').toString(),
       category: (map['category'] ?? 'Other').toString(),
+      classId: map['class_id']?.toString() ?? '',
+      announcementId: map['announcement_id']?.toString() ?? '',
       createdAt:
           DateTime.tryParse((map['created_at'] ?? '').toString())?.toLocal() ??
-              DateTime.now(),
+          DateTime.now(),
       readAt: map['read_at'] != null
           ? DateTime.tryParse(map['read_at'].toString())?.toLocal()
           : null,
@@ -416,10 +423,7 @@ class OrganizerService {
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) throw Exception('Not signed in.');
 
-    var query = supabase
-        .from('student_notes')
-        .select()
-        .eq('student_id', uid);
+    var query = supabase.from('student_notes').select().eq('student_id', uid);
 
     if (classId != null) {
       query = query.eq('class_id', classId);
@@ -508,9 +512,7 @@ class OrganizerService {
         .stream(primaryKey: ['id'])
         .eq('student_id', uid)
         .order('created_at', ascending: false)
-        .map(
-          (rows) => rows.map(StudentNotificationRecord.fromMap).toList(),
-        );
+        .map((rows) => rows.map(StudentNotificationRecord.fromMap).toList());
   }
 
   static Future<void> markNotificationRead(String id) async {

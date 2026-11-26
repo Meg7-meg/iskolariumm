@@ -18,6 +18,10 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
   final String? scheduleId;
   final String? meetingKey;
   final String? meetingLabel;
+  final String room;
+  final bool correctionMode;
+  final String? correctionSessionId;
+  final String correctionReason;
 
   const InstructorReviewAttendanceScreen({
     super.key,
@@ -27,6 +31,10 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
     this.scheduleId,
     this.meetingKey,
     this.meetingLabel,
+    this.room = '',
+    this.correctionMode = false,
+    this.correctionSessionId,
+    this.correctionReason = '',
   });
 
   // ============================================================
@@ -36,24 +44,31 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
   int get presentCount =>
       students.where((s) => s['status'] == 'Present').length;
 
-  int get absentCount =>
-      students.where((s) => s['status'] == 'Absent').length;
+  int get absentCount => students.where((s) => s['status'] == 'Absent').length;
 
-  int get lateCount =>
-      students.where((s) => s['status'] == 'Late').length;
+  int get lateCount => students.where((s) => s['status'] == 'Late').length;
 
   int get excusedCount =>
       students.where((s) => s['status'] == 'Excused').length;
 
-  int get unmarkedCount =>
-      students.where((s) => s['status'] == null).length;
+  int get unmarkedCount => students.where((s) => s['status'] == null).length;
 
   bool get allMarked => unmarkedCount == 0;
 
   String get formattedDate {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[selectedDate.month - 1]} '
         '${selectedDate.day}, ${selectedDate.year}';
@@ -109,42 +124,76 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
 
     final classId = classItem['id'];
     if (classId == null || classId.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Missing class ID.')));
+      return;
+    }
+    if (correctionMode && correctionReason.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Missing class ID.')),
+        const SnackBar(content: Text('A correction reason is required.')),
       );
       return;
     }
 
     final statuses = <String, String>{};
+    final remarks = <String, String>{};
     for (final student in students) {
       final sid = student['id']?.toString() ?? '';
       final status = student['status']?.toString() ?? '';
       if (sid.isNotEmpty && status.isNotEmpty) {
         statuses[sid] = status.toLowerCase();
+        remarks[sid] = (student['remarks'] ?? '').toString().trim();
       }
     }
 
     try {
-      await AcademicService.saveClassAttendance(
-        classId: classId,
-        date: selectedDate,
-        studentStatuses: statuses,
-        scheduleId: scheduleId,
-        meetingKey: meetingKey,
-      );
+      if (correctionMode && correctionSessionId != null) {
+        await AcademicService.correctAttendanceSession(
+          sessionId: correctionSessionId!,
+          reason: correctionReason,
+          studentStatuses: statuses,
+          studentRemarks: remarks,
+        );
+      } else if (correctionMode) {
+        await AcademicService.recordMissedAttendanceSession(
+          classId: classId,
+          date: selectedDate,
+          correctionReason: correctionReason,
+          studentStatuses: statuses,
+          studentRemarks: remarks,
+          scheduleId: scheduleId,
+          meetingKey: meetingKey,
+          meetingLabel: meetingLabel ?? '',
+          room: room,
+        );
+      } else {
+        await AcademicService.saveClassAttendance(
+          classId: classId,
+          date: selectedDate,
+          studentStatuses: statuses,
+          studentRemarks: remarks,
+          scheduleId: scheduleId,
+          meetingKey: meetingKey,
+          meetingLabel: meetingLabel ?? '',
+          room: room,
+        );
+      }
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Attendance saved to Supabase.'),
+        SnackBar(
+          content: Text(
+            correctionMode
+                ? 'Attendance correction saved to Supabase.'
+                : 'Attendance saved to Supabase.',
+          ),
         ),
       );
       Navigator.pop(context, true);
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(formatSupabaseError(e))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(formatSupabaseError(e))));
     }
   }
 
@@ -274,8 +323,9 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                   : 0.0,
               minHeight: 4,
               backgroundColor: AppColors.border,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.primary,
+              ),
             ),
           ),
 
@@ -391,10 +441,14 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                   style: AppTextStyles.cardHeading,
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  student['id'] as String? ?? '',
-                  style: AppTextStyles.meta,
-                ),
+                Text(student['id'] as String? ?? '', style: AppTextStyles.meta),
+                if ((student['remarks'] ?? '').toString().trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Remark: ${student['remarks']}',
+                    style: AppTextStyles.bodySmall,
+                  ),
+                ],
               ],
             ),
           ),
@@ -450,12 +504,11 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  allMarked
-                      ? 'Attendance complete'
-                      : 'Attendance incomplete',
+                  allMarked ? 'Attendance complete' : 'Attendance incomplete',
                   style: TextStyle(
-                    color:
-                        allMarked ? AppColors.primary : AppColors.warningDark,
+                    color: allMarked
+                        ? AppColors.primary
+                        : AppColors.warningDark,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -466,8 +519,9 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                       ? 'All students have been marked. Verify before confirming.'
                       : '$unmarkedCount student(s) are still unmarked. Go back and complete their attendance.',
                   style: TextStyle(
-                    color:
-                        allMarked ? AppColors.primary : AppColors.warningDark,
+                    color: allMarked
+                        ? AppColors.primary
+                        : AppColors.warningDark,
                     fontSize: 11,
                     height: 1.5,
                     fontWeight: FontWeight.w500,
@@ -501,8 +555,12 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                 children: [
                   AcademicPageHeader(
                     eyebrow: 'Instructor · Attendance',
-                    title: 'Review Attendance',
-                    subtitle: '$formattedDate · Review before confirmation',
+                    title: correctionMode
+                        ? 'Review Correction'
+                        : 'Review Attendance',
+                    subtitle: correctionMode
+                        ? '$formattedDate · Reason: $correctionReason'
+                        : '$formattedDate · Review before confirmation',
                     onBack: () => Navigator.pop(context),
                   ),
 
@@ -520,7 +578,10 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Student records', style: AppTextStyles.sectionHeading),
+                      Text(
+                        'Student records',
+                        style: AppTextStyles.sectionHeading,
+                      ),
                       StatusBadge(
                         label: '${students.length} students',
                         color: AppColors.primary,
@@ -573,8 +634,9 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                               backgroundColor: AppColors.surface,
                               side: const BorderSide(color: AppColors.border),
                               shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadii.lg),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.lg,
+                                ),
                               ),
                             ),
                           ),
@@ -592,8 +654,8 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                                 ? () => saveAttendance(context)
                                 : null,
                             icon: const Icon(LucideIcons.save, size: 15),
-                            label: const Text(
-                              'Confirm',
+                            label: Text(
+                              correctionMode ? 'Apply correction' : 'Confirm',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -606,8 +668,9 @@ class InstructorReviewAttendanceScreen extends StatelessWidget {
                               disabledForegroundColor: AppColors.textSecondary,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadii.lg),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.lg,
+                                ),
                               ),
                             ),
                           ),

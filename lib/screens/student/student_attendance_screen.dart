@@ -1,6 +1,6 @@
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../../services/academic_service.dart';
 import '../../services/supabase_client_provider.dart';
 import '../../src/app_colors.dart';
@@ -16,13 +16,12 @@ class StudentAttendanceScreen extends StatefulWidget {
 
 class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   static const Color primaryBlue = AppColors.primary;
-  static const Color darkBlue = AppColors.navy;
+  static const Color darkBlue = AppColors.textPrimary;
   static const Color background = AppColors.background;
   static const Color muted = AppColors.textSecondary;
-  static const Color border = AppColors.border;
-  static const Color lightBlue = Color(0xFFEBF2FE);
-  static const Color green = Color(0xFF16A36A);
-  static const Color red = Color(0xFFE05252);
+  static const Color lightBlue = AppColors.primaryLight;
+  static const Color green = AppColors.attendancePresent;
+  static const Color red = AppColors.attendanceAbsent;
 
   bool _isLoading = true;
   String? _error;
@@ -81,7 +80,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
       }
 
       final totalAll = records.length;
-      final overall = totalAll > 0 ? ((totalPresent / totalAll) * 100).round() : 0;
+      final overall = totalAll > 0
+          ? ((totalPresent / totalAll) * 100).round()
+          : 0;
 
       if (!mounted) return;
       setState(() {
@@ -111,83 +112,69 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
           child: Column(
             children: [
               _buildHeader(context),
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: primaryBlue),
-                    )
-                  : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(_error!, textAlign: TextAlign.center),
-                                const SizedBox(height: 12),
-                                FilledButton(
-                                  onPressed: _loadAttendance,
-                                  child: const Text('Retry'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          color: primaryBlue,
-                          onRefresh: _loadAttendance,
-                          child: SingleChildScrollView(
-                            physics: const AlwaysScrollableScrollPhysics(
-                              parent: BouncingScrollPhysics(),
-                            ),
-                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildOverviewCard(),
-                                const SizedBox(height: 22),
-                                _buildSummaryCards(),
-                                const SizedBox(height: 28),
-                                _buildSectionHeader(
-                                  'Subject Attendance',
-                                  'Your attendance per subject',
-                                ),
-                                const SizedBox(height: 14),
-                                if (_subjects.isEmpty)
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(22),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(color: border),
-                                    ),
-                                    child: const Text(
-                                      'No attendance records yet. Records marked by your instructors will appear here.',
-                                      style: TextStyle(color: muted, fontSize: 13),
-                                    ),
-                                  )
-                                else
-                                  ..._subjects.map(
-                                    (subject) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _buildSubjectCard(subject),
-                                    ),
-                                  ),
-                                const SizedBox(height: 16),
-                                _buildSectionHeader(
-                                  'Attendance Information',
-                                  'Important reminders',
-                                ),
-                                const SizedBox(height: 14),
-                                _buildInformationCard(),
-                              ],
-                            ),
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: primaryBlue),
+                      )
+                    : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.xl),
+                          child: AsyncErrorView(
+                            message: _error!,
+                            onRetry: _loadAttendance,
                           ),
                         ),
-            ),
-          ],
-        ),
+                      )
+                    : RefreshIndicator(
+                        color: primaryBlue,
+                        onRefresh: _loadAttendance,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildOverviewCard(),
+                              const SizedBox(height: 22),
+                              _buildSummaryCards(),
+                              const SizedBox(height: 28),
+                              _buildSectionHeader(
+                                'Attendance',
+                                'Your attendance per subject',
+                              ),
+                              const SizedBox(height: 14),
+                              if (_subjects.isEmpty)
+                                const EmptyStateView(
+                                  icon: LucideIcons.clipboardList,
+                                  title: 'No attendance records yet',
+                                  message:
+                                      'Your class attendance will appear here once it is recorded.',
+                                )
+                              else
+                                ..._subjects.map(
+                                  (subject) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _buildSubjectCard(subject),
+                                  ),
+                                ),
+                              const SizedBox(height: 16),
+                              _buildSectionHeader(
+                                'Attendance Information',
+                                'Important reminders',
+                              ),
+                              const SizedBox(height: 14),
+                              _buildInformationCard(),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -195,60 +182,18 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
-      child: Row(
-        children: [
-          Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => Navigator.maybePop(context),
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  border: Border.all(color: border),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  LucideIcons.arrowLeft,
-                  color: darkBlue,
-                  size: 20,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'My Attendance',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: darkBlue,
-                  ),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'Monitor your class attendance',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: AcademicPageHeader(
+        title: 'Attendance',
+        subtitle: 'Monitor your class attendance',
+        onBack: () => Navigator.maybePop(context),
+        actions: [
           Container(
             width: 42,
             height: 42,
             decoration: BoxDecoration(
               color: lightBlue,
-              borderRadius: BorderRadius.circular(13),
+              borderRadius: BorderRadius.circular(AppRadii.md),
             ),
             child: const Icon(
               LucideIcons.calendarDays,
@@ -262,27 +207,8 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   }
 
   Widget _buildOverviewCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF1A56DB),
-            Color(0xFF3478EF),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: primaryBlue.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+    return SurfacePanel(
+      padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -291,11 +217,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
               const Expanded(
                 child: Text(
                   'Overall Attendance',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTextStyles.cardHeading,
                 ),
               ),
               Container(
@@ -304,21 +226,21 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(20),
+                  color: AppColors.successLight,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
                 ),
                 child: const Row(
                   children: [
                     Icon(
                       LucideIcons.trendingUp,
-                      color: Colors.white,
+                      color: AppColors.success,
                       size: 13,
                     ),
                     SizedBox(width: 5),
                     Text(
                       'Good standing',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.successDark,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
@@ -338,20 +260,12 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   children: [
                     Text(
                       '$_overallPercent%',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 48,
-                        fontWeight: FontWeight.w800,
-                        height: 1,
-                      ),
+                      style: AppTextStyles.pageTitle.copyWith(fontSize: 42),
                     ),
                     const SizedBox(height: 10),
                     Text(
                       'Your current attendance rate',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 12,
-                      ),
+                      style: AppTextStyles.bodySmall,
                     ),
                   ],
                 ),
@@ -366,22 +280,16 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                       width: 88,
                       height: 88,
                       child: CircularProgressIndicator(
-                        value: 0.92,
+                        value: _overallPercent / 100,
                         strokeWidth: 8,
-                        backgroundColor:
-                            Colors.white.withValues(alpha: 0.22),
-                        valueColor:
-                            const AlwaysStoppedAnimation<Color>(
-                          Colors.white,
+                        backgroundColor: AppColors.primaryLight,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.primary,
                         ),
                         strokeCap: StrokeCap.round,
                       ),
                     ),
-                    const Icon(
-                      LucideIcons.check,
-                      color: Colors.white,
-                      size: 30,
-                    ),
+                    const Icon(LucideIcons.check, color: primaryBlue, size: 30),
                   ],
                 ),
               ),
@@ -392,22 +300,18 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(13),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(AppRadii.md),
             ),
             child: const Row(
               children: [
-                Icon(
-                  LucideIcons.info,
-                  color: Colors.white,
-                  size: 17,
-                ),
+                Icon(LucideIcons.info, color: primaryBlue, size: 17),
                 SizedBox(width: 9),
                 Expanded(
                   child: Text(
                     'Keep attending your classes to maintain your attendance rate.',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                       fontSize: 11,
                       height: 1.4,
                     ),
@@ -429,9 +333,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
             icon: LucideIcons.checkCircle2,
             title: 'Present',
             value: '$_totalPresent',
-            subtitle: 'Classes attended',
+            subtitle: 'Courses attended',
             color: green,
-            iconBackground: const Color(0xFFE7F8EF),
+            iconBackground: AppColors.attendancePresentLight,
           ),
         ),
         const SizedBox(width: 12),
@@ -440,9 +344,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
             icon: LucideIcons.xCircle,
             title: 'Absent',
             value: '$_totalAbsent',
-            subtitle: 'Classes missed',
+            subtitle: 'Courses missed',
             color: red,
-            iconBackground: const Color(0xFFFFEEEE),
+            iconBackground: AppColors.attendanceAbsentLight,
           ),
         ),
       ],
@@ -457,13 +361,8 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     required Color color,
     required Color iconBackground,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: border),
-      ),
+    return SurfacePanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -495,13 +394,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 10,
-              color: muted,
-            ),
-          ),
+          Text(subtitle, style: const TextStyle(fontSize: 10, color: muted)),
         ],
       ),
     );
@@ -520,28 +413,16 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            fontSize: 11,
-            color: muted,
-          ),
-        ),
+        Text(subtitle, style: const TextStyle(fontSize: 11, color: muted)),
       ],
     );
   }
 
   Widget _buildSubjectCard(_SubjectAttendance subject) {
-    final Color progressColor =
-        subject.percentage >= 90 ? green : primaryBlue;
+    final Color progressColor = subject.percentage >= 90 ? green : primaryBlue;
 
-    return Container(
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: border),
-      ),
+    return SurfacePanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         children: [
           Row(
@@ -575,10 +456,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                     const SizedBox(height: 4),
                     Text(
                       subject.instructor,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: muted,
-                      ),
+                      style: const TextStyle(fontSize: 10, color: muted),
                     ),
                   ],
                 ),
@@ -611,10 +489,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                 label: '${subject.present} Present',
               ),
               const SizedBox(width: 16),
-              _attendanceLegend(
-                color: red,
-                label: '${subject.absent} Absent',
-              ),
+              _attendanceLegend(color: red, label: '${subject.absent} Absent'),
               const Spacer(),
               const Text(
                 'View only',
@@ -631,20 +506,14 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     );
   }
 
-  Widget _attendanceLegend({
-    required Color color,
-    required String label,
-  }) {
+  Widget _attendanceLegend({required Color color, required String label}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 7,
           height: 7,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 5),
         Text(
@@ -660,21 +529,14 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   }
 
   Widget _buildInformationCard() {
-    return Container(
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: lightBlue,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: border),
-      ),
+    return SurfacePanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      backgroundColor: lightBlue,
+      borderColor: AppColors.infoBorder,
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            LucideIcons.lightbulb,
-            color: primaryBlue,
-            size: 21,
-          ),
+          Icon(LucideIcons.lightbulb, color: primaryBlue, size: 21),
           SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -693,11 +555,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                   'Your attendance records are provided by your instructor. '
                   'If you notice an incorrect record, contact your instructor '
                   'for verification.',
-                  style: TextStyle(
-                    color: muted,
-                    fontSize: 11,
-                    height: 1.5,
-                  ),
+                  style: TextStyle(color: muted, fontSize: 11, height: 1.5),
                 ),
               ],
             ),

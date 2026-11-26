@@ -23,6 +23,8 @@ class CalendarPage extends StatefulWidget {
 
 class _CalendarPageState extends State<CalendarPage> {
   List<StudentEventRecord> _calendarEvents = const [];
+  bool _isLoadingCalendarEvents = true;
+  String? _calendarError;
 
   @override
   void initState() {
@@ -31,12 +33,26 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Future<void> _loadCalendarEvents() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingCalendarEvents = true;
+        _calendarError = null;
+      });
+    }
+
     try {
       final events = await OrganizerService.getEvents();
       if (!mounted) return;
-      setState(() => _calendarEvents = events);
-    } catch (_) {
-      // Keep tasks visible even if events fail to load.
+      setState(() {
+        _calendarEvents = events;
+        _isLoadingCalendarEvents = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingCalendarEvents = false;
+        _calendarError = formatSupabaseError(error);
+      });
     }
   }
 
@@ -45,32 +61,28 @@ class _CalendarPageState extends State<CalendarPage> {
   VoidCallback get onAdd => widget.onAdd;
 
   static const Color _blue = AppColors.primary;
-  static const Color _darkBlue = AppColors.navy;
+  static const Color _darkBlue = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
   static const Color _background = AppColors.background;
   static const Color _lightBlue = AppColors.primaryLight;
   static const Color _border = AppColors.border;
 
   static BoxDecoration get _cardDecoration => BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
-        boxShadow: [
-          BoxShadow(
-            color: _blue.withValues(alpha: 0.045),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      );
+    color: AppColors.surface,
+    borderRadius: BorderRadius.circular(AppRadii.lg),
+    border: Border.all(color: _border),
+    boxShadow: [
+      BoxShadow(
+        color: _blue.withValues(alpha: 0.045),
+        blurRadius: 14,
+        offset: const Offset(0, 4),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
-    final monthStart = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-      1,
-    );
+    final monthStart = DateTime(selectedDate.year, selectedDate.month, 1);
 
     final firstWeekday = monthStart.weekday % 7;
 
@@ -94,27 +106,43 @@ class _CalendarPageState extends State<CalendarPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AcademicPageHeader(
-                eyebrow: 'Schedule',
+                eyebrow: 'PLANNING',
                 title: 'Calendar',
-                subtitle: 'Plan classes, deadlines, and events',
+                subtitle: 'Plan courses and deadlines',
                 actions: [
                   FilledButton.icon(
                     onPressed: onAdd,
                     icon: const Icon(LucideIcons.plus, size: 16),
                     label: const Text('Add'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _blue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: const StadiumBorder(),
+                    ),
                   ),
                 ],
               ),
               _buildMonthNavigation(),
               const SizedBox(height: 14),
-              _buildCalendarGrid(
-                firstWeekday,
-                daysInMonth,
-                weekCount,
-              ),
+              _buildCalendarGrid(firstWeekday, daysInMonth, weekCount),
               const SizedBox(height: 24),
               _buildAgendaHeader(events.length),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
+              if (_calendarError != null) ...[
+                AsyncErrorView(
+                  message: _calendarError!,
+                  onRetry: _loadCalendarEvents,
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ] else if (_isLoadingCalendarEvents) ...[
+                const LinearProgressIndicator(),
+                const SizedBox(height: AppSpacing.md),
+              ],
               _buildAgenda(context, events),
             ],
           ),
@@ -178,11 +206,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 borderRadius: BorderRadius.circular(15),
                 border: Border.all(color: _border),
               ),
-              child: const Icon(
-                LucideIcons.plus,
-                color: _blue,
-                size: 23,
-              ),
+              child: const Icon(LucideIcons.plus, color: _blue, size: 23),
             ),
           ),
         ),
@@ -201,11 +225,7 @@ class _CalendarPageState extends State<CalendarPage> {
           icon: LucideIcons.chevronLeft,
           onTap: () {
             onDateChanged(
-              DateTime(
-                selectedDate.year,
-                selectedDate.month - 1,
-                1,
-              ),
+              DateTime(selectedDate.year, selectedDate.month - 1, 1),
             );
           },
         ),
@@ -214,11 +234,7 @@ class _CalendarPageState extends State<CalendarPage> {
             children: [
               Text(
                 '${_monthName(selectedDate.month)} ${selectedDate.year}',
-                style: const TextStyle(
-                  color: _darkBlue,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: AppTextStyles.screenTitle,
               ),
               const SizedBox(height: 3),
               const Text(
@@ -234,9 +250,7 @@ class _CalendarPageState extends State<CalendarPage> {
               GestureDetector(
                 onTap: () {
                   final today = DateTime.now();
-                  onDateChanged(
-                    DateTime(today.year, today.month, today.day),
-                  );
+                  onDateChanged(DateTime(today.year, today.month, today.day));
                 },
                 child: const Text(
                   'Go to today',
@@ -254,11 +268,7 @@ class _CalendarPageState extends State<CalendarPage> {
           icon: LucideIcons.chevronRight,
           onTap: () {
             onDateChanged(
-              DateTime(
-                selectedDate.year,
-                selectedDate.month + 1,
-                1,
-              ),
+              DateTime(selectedDate.year, selectedDate.month + 1, 1),
             );
           },
         ),
@@ -283,11 +293,7 @@ class _CalendarPageState extends State<CalendarPage> {
             border: Border.all(color: _border),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(
-            icon,
-            color: _darkBlue,
-            size: 20,
-          ),
+          child: Icon(icon, color: _darkBlue, size: 20),
         ),
       ),
     );
@@ -297,11 +303,7 @@ class _CalendarPageState extends State<CalendarPage> {
   // CALENDAR GRID
   // ------------------------------------------------------------
 
-  Widget _buildCalendarGrid(
-    int firstWeekday,
-    int daysInMonth,
-    int weekCount,
-  ) {
+  Widget _buildCalendarGrid(int firstWeekday, int daysInMonth, int weekCount) {
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 16, 10, 13),
       decoration: _cardDecoration,
@@ -348,11 +350,7 @@ class _CalendarPageState extends State<CalendarPage> {
   // CALENDAR DAY CELL
   // ------------------------------------------------------------
 
-  Widget _calendarCell(
-    int position,
-    int firstWeekday,
-    int daysInMonth,
-  ) {
+  Widget _calendarCell(int position, int firstWeekday, int daysInMonth) {
     final day = position - firstWeekday + 1;
     final valid = day >= 1 && day <= daysInMonth;
 
@@ -360,11 +358,7 @@ class _CalendarPageState extends State<CalendarPage> {
       return const SizedBox(height: 48);
     }
 
-    final currentDate = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-      day,
-    );
+    final currentDate = DateTime(selectedDate.year, selectedDate.month, day);
 
     final isSelected = _sameDate(currentDate, selectedDate);
 
@@ -422,7 +416,7 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-    // ------------------------------------------------------------
+  // ------------------------------------------------------------
   // PARSE TASK DUE DATE
   // ------------------------------------------------------------
 
@@ -434,11 +428,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final isoDate = DateTime.tryParse(cleaned);
 
     if (isoDate != null) {
-      return DateTime(
-        isoDate.year,
-        isoDate.month,
-        isoDate.day,
-      );
+      return DateTime(isoDate.year, isoDate.month, isoDate.day);
     }
 
     final match = RegExp(
@@ -486,9 +476,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
     final parsed = DateTime(year, month, day);
 
-    if (parsed.year != year ||
-        parsed.month != month ||
-        parsed.day != day) {
+    if (parsed.year != year || parsed.month != month || parsed.day != day) {
       return null;
     }
 
@@ -515,18 +503,11 @@ class _CalendarPageState extends State<CalendarPage> {
           child: Text(
             '${_weekdayName(selectedDate.weekday)}, '
             '${_monthName(selectedDate.month)} ${selectedDate.day}',
-            style: const TextStyle(
-              color: _darkBlue,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
+            style: AppTextStyles.sectionHeading,
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 11,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
             color: _lightBlue,
             borderRadius: BorderRadius.circular(20),
@@ -564,18 +545,12 @@ class _CalendarPageState extends State<CalendarPage> {
                     title: events[i].$2,
                     location: events[i].$3,
                     type: events[i].$4,
-                    onTap: () => _showEventDetails(
-                      context,
-                      events[i],
-                    ),
+                    onTap: () => _showEventDetails(context, events[i]),
                   ),
                   if (i < events.length - 1)
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 15),
-                      child: Divider(
-                        height: 1,
-                        color: _border,
-                      ),
+                      child: Divider(height: 1, color: _border),
                     ),
                 ],
               ],
@@ -602,9 +577,7 @@ class _CalendarPageState extends State<CalendarPage> {
           padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(25),
-            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
           ),
           child: SafeArea(
             top: false,
@@ -651,10 +624,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(
-                        LucideIcons.x,
-                        color: _muted,
-                      ),
+                      icon: const Icon(LucideIcons.x, color: _muted),
                     ),
                   ],
                 ),
@@ -675,24 +645,14 @@ class _CalendarPageState extends State<CalendarPage> {
                       '${selectedDate.day}, ${selectedDate.year}',
                 ),
                 const SizedBox(height: 13),
-                _detailRow(
-                  LucideIcons.clock,
-                  'Schedule',
-                  event.$1,
-                ),
+                _detailRow(LucideIcons.clock, 'Schedule', event.$1),
                 const SizedBox(height: 13),
-                _detailRow(
-                  LucideIcons.bookOpen,
-                  'Subject',
-                  event.$3,
-                ),
+                _detailRow(LucideIcons.bookOpen, 'Subject', event.$3),
                 const SizedBox(height: 13),
                 _detailRow(
                   LucideIcons.tag,
                   'Category',
-                  event.$4 == 'Completed'
-                      ? 'Assignment'
-                      : event.$4,
+                  event.$4 == 'Completed' ? 'Assignment' : event.$4,
                 ),
                 const SizedBox(height: 20),
                 Container(
@@ -702,9 +662,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: isCompleted
-                        ? AppColors.successLight
-                        : _lightBlue,
+                    color: isCompleted ? AppColors.successLight : _lightBlue,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -714,20 +672,14 @@ class _CalendarPageState extends State<CalendarPage> {
                             ? LucideIcons.circleCheck
                             : LucideIcons.info,
                         size: 17,
-                        color: isCompleted
-                            ? AppColors.successDark
-                            : _blue,
+                        color: isCompleted ? AppColors.successDark : _blue,
                       ),
                       const SizedBox(width: 9),
                       Expanded(
                         child: Text(
-                          isCompleted
-                              ? 'You have completed this task.'
-                              : 'Remember to complete this task before its due date.',
+                          isCompleted ? 'You have completed this task.' : 'Remember to complete this task before its due date.',
                           style: TextStyle(
-                            color: isCompleted
-                                ? AppColors.successDark
-                                : _blue,
+                            color: isCompleted ? AppColors.successDark : _blue,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -752,9 +704,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     ),
                     child: const Text(
                       'Close',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -766,21 +716,13 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-    Widget _detailRow(
-    IconData icon,
-    String label,
-    String value,
-  ) {
+  Widget _detailRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(
-          icon,
-          color: _muted,
-          size: 17,
-        ),
+        Icon(icon, color: _muted, size: 17),
         const SizedBox(width: 10),
-        SizedBox(
-          width: 75,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 58, maxWidth: 75),
           child: Text(
             label,
             style: const TextStyle(
@@ -810,10 +752,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _buildEmptyAgenda() {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: 32,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
       child: Column(
         children: [
           Container(
@@ -832,38 +771,23 @@ class _CalendarPageState extends State<CalendarPage> {
           const SizedBox(height: 13),
           const Text(
             'No tasks scheduled',
-            style: TextStyle(
-              color: _darkBlue,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
+            style: AppTextStyles.cardHeading,
           ),
           const SizedBox(height: 5),
           const Text(
             'Your schedule is clear for this day.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _muted,
-              fontSize: 11,
-            ),
+            style: TextStyle(color: _muted, fontSize: 11),
           ),
           const SizedBox(height: 15),
           TextButton.icon(
             onPressed: onAdd,
-            icon: const Icon(
-              LucideIcons.plus,
-              size: 15,
-            ),
+            icon: const Icon(LucideIcons.plus, size: 15),
             label: const Text(
               'Add an item',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
             ),
-            style: TextButton.styleFrom(
-              foregroundColor: _blue,
-            ),
+            style: TextButton.styleFrom(foregroundColor: _blue),
           ),
         ],
       ),
@@ -874,9 +798,7 @@ class _CalendarPageState extends State<CalendarPage> {
   // TASK EVENTS FOR SELECTED DATE
   // ------------------------------------------------------------
 
-  List<(String, String, String, String)> _eventsFor(
-    DateTime date,
-  ) {
+  List<(String, String, String, String)> _eventsFor(DateTime date) {
     final events = <(String, String, String, String)>[];
 
     for (final task in TaskStore.items) {
@@ -943,7 +865,7 @@ class EventRow extends StatelessWidget {
   });
 
   static const Color _blue = AppColors.primary;
-  static const Color _darkBlue = AppColors.navy;
+  static const Color _darkBlue = AppColors.textPrimary;
   static const Color _muted = AppColors.textSecondary;
   static const Color _lightBlue = AppColors.primaryLight;
 
@@ -957,10 +879,7 @@ class EventRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 15,
-            vertical: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
           child: Row(
             children: [
               SizedBox(
@@ -1014,10 +933,7 @@ class EventRow extends StatelessWidget {
                             location,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _muted,
-                              fontSize: 10,
-                            ),
+                            style: const TextStyle(color: _muted, fontSize: 10),
                           ),
                         ),
                       ],
@@ -1027,10 +943,7 @@ class EventRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: isCompleted
                       ? AppColors.successLight
@@ -1049,11 +962,7 @@ class EventRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 5),
-              const Icon(
-                LucideIcons.chevronRight,
-                color: _muted,
-                size: 15,
-              ),
+              const Icon(LucideIcons.chevronRight, color: _muted, size: 15),
             ],
           ),
         ),

@@ -29,6 +29,23 @@ void main() {
       );
     });
 
+    test('finds the next occurrence after a reference time', () {
+      const mondayMorning = ClassMeetingSchedule(
+        dayOfWeek: 'Monday',
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60,
+      );
+
+      expect(
+        mondayMorning.nextOccurrenceAfter(DateTime(2026, 6, 1, 8)),
+        DateTime(2026, 6, 1, 9),
+      );
+      expect(
+        mondayMorning.nextOccurrenceAfter(DateTime(2026, 6, 1, 9)),
+        DateTime(2026, 6, 8, 9),
+      );
+    });
+
     test('detects duplicate and overlapping meetings on same day', () {
       const overlapping = [
         ClassMeetingSchedule(
@@ -110,11 +127,17 @@ void main() {
 
     test('requires at least one meeting when requireAtLeastOne is true', () {
       expect(
-        ClassMeetingSchedule.validateSchedules(const [], requireAtLeastOne: true),
+        ClassMeetingSchedule.validateSchedules(
+          const [],
+          requireAtLeastOne: true,
+        ),
         isNotNull,
       );
       expect(
-        ClassMeetingSchedule.validateSchedules(const [], requireAtLeastOne: false),
+        ClassMeetingSchedule.validateSchedules(
+          const [],
+          requireAtLeastOne: false,
+        ),
         isNull,
       );
     });

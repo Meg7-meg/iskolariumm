@@ -1,5 +1,5 @@
-
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 // ============================================================
 // SHARED ANNOUNCEMENT MODEL
@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 class AnnouncementItem {
   final String id;
+  final String classId;
   final String title;
   final String message;
   final String classCode;
@@ -19,6 +20,7 @@ class AnnouncementItem {
 
   AnnouncementItem({
     required this.id,
+    this.classId = '',
     required this.title,
     required this.message,
     required this.classCode,
@@ -29,7 +31,7 @@ class AnnouncementItem {
     this.unread = true,
   });
 
-  IconData get icon => Icons.campaign_outlined;
+  IconData get icon => LucideIcons.megaphone;
 
   String get category => 'Classes';
 }
@@ -46,9 +48,7 @@ class AnnouncementStore {
   }
 
   static void update(AnnouncementItem announcement) {
-    final index = items.indexWhere(
-      (item) => item.id == announcement.id,
-    );
+    final index = items.indexWhere((item) => item.id == announcement.id);
 
     if (index != -1) {
       items[index] = announcement;
